@@ -1,0 +1,1805 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#F97316" />
+<title>A-Kats Jobs</title>
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="icon" href="icon-192.png" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="A-Kats" />
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          brand: {
+            50:'#FFF7ED',100:'#FFEDD5',200:'#FED7AA',300:'#FDBA74',
+            400:'#FB923C',500:'#F97316',600:'#EA580C',700:'#C2410C',
+            800:'#9A3412',900:'#7C2D12',
+          }
+        }
+      }
+    }
+  }
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  html, body { font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }
+  button, .tap { min-height: 52px; }
+
+  .stage-quote     { background:#E0E7FF; color:#3730A3; }
+  .stage-scheduled { background:#FEF3C7; color:#92400E; }
+  .stage-working   { background:#DBEAFE; color:#1E40AF; }
+  .stage-done      { background:#D1FAE5; color:#065F46; }
+  .stage-paid      { background:#E5E7EB; color:#374151; }
+
+  .pay-unpaid  { background:#FEE2E2; color:#991B1B; }
+  .pay-partial { background:#FEF3C7; color:#92400E; }
+  .pay-paid    { background:#D1FAE5; color:#065F46; }
+
+  .overdue-card {
+    border-color:#FCA5A5;
+    background:linear-gradient(180deg,#FEF2F2 0%, #FFFFFF 100%);
+    box-shadow: 0 1px 0 rgba(220,38,38,.05), 0 8px 24px -12px rgba(220,38,38,.25);
+  }
+  .money-card {
+    border-color:#FCD34D;
+    background:linear-gradient(180deg,#FFFBEB 0%, #FFFFFF 100%);
+  }
+  .pulse-dot {
+    width:10px;height:10px;border-radius:9999px;background:#DC2626;
+    box-shadow:0 0 0 0 rgba(220,38,38,.6);
+    animation: pulse 1.6s infinite;
+  }
+  @keyframes pulse {
+    0%   { box-shadow:0 0 0 0 rgba(220,38,38,.55); }
+    70%  { box-shadow:0 0 0 12px rgba(220,38,38,0); }
+    100% { box-shadow:0 0 0 0 rgba(220,38,38,0); }
+  }
+
+  .photo-tile { aspect-ratio:1/1; background:#F1F5F9; border-radius:12px; overflow:hidden; position:relative; }
+  .photo-tile img { width:100%; height:100%; object-fit:cover; }
+
+  .scroll-x { scrollbar-width: none; }
+  .scroll-x::-webkit-scrollbar { display: none; }
+
+  .modal-backdrop {
+    position:fixed; inset:0; background:rgba(15,23,42,.55);
+    display:flex; align-items:flex-end; justify-content:center; z-index:60;
+    animation: fadein .15s ease-out;
+  }
+  @media (min-width: 640px) { .modal-backdrop { align-items:center; } }
+  .modal-card {
+    background:white; width:100%; max-width:560px;
+    border-radius:24px 24px 0 0; padding:20px;
+    max-height:92vh; overflow-y:auto;
+    animation: slideup .2s ease-out;
+  }
+  @media (min-width: 640px) { .modal-card { border-radius:24px; } }
+  @keyframes fadein { from{opacity:0} to{opacity:1} }
+  @keyframes slideup { from{transform:translateY(20px); opacity:0} to{transform:translateY(0); opacity:1} }
+
+  .stage-btn {
+    border:2px solid #E5E7EB; border-radius:14px; padding:12px;
+    text-align:center; font-weight:600; transition:all .15s;
+  }
+  .stage-btn.active { border-color:#F97316; background:#FFF7ED; color:#9A3412; }
+
+  .toast {
+    position:fixed; bottom:96px; left:50%; transform:translateX(-50%);
+    background:#0F172A; color:white; padding:12px 20px; border-radius:9999px;
+    font-weight:600; z-index:80; animation: slideup .2s, fadeout .3s 2.2s forwards;
+    box-shadow:0 8px 24px -8px rgba(0,0,0,.4);
+  }
+  .toast.error { background:#991B1B; }
+  @keyframes fadeout { to{opacity:0; transform:translate(-50%, 10px)} }
+
+  .pin-dot {
+    width:18px; height:18px; border-radius:9999px;
+    background:#E5E7EB; transition:all .15s;
+  }
+  .pin-dot.filled { background:#F97316; transform:scale(1.15); }
+  .pin-key {
+    font-size:28px; font-weight:600; color:#0F172A;
+    background:white; border-radius:9999px; aspect-ratio:1/1;
+    transition:all .1s; box-shadow:0 1px 3px rgba(0,0,0,.06);
+  }
+  .pin-key:active { background:#F1F5F9; transform:scale(.95); }
+  .pin-key.danger { color:#DC2626; }
+
+  .bottom-link {
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    padding:10px 4px; color:#64748B; transition:color .15s;
+  }
+  .bottom-link.active { color:#EA580C; }
+  .bottom-link:hover { color:#0F172A; }
+
+  .role-badge {
+    font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.05em;
+    padding:2px 8px; border-radius:9999px;
+  }
+  .role-owner  { background:#FEF3C7; color:#92400E; }
+  .role-worker { background:#DBEAFE; color:#1E40AF; }
+
+  .activity-item {
+    padding:10px 12px; border-left:3px solid #E5E7EB;
+    background:#F8FAFC; border-radius:0 10px 10px 0; margin-bottom:6px;
+  }
+  .activity-item.stage  { border-color:#3B82F6; background:#EFF6FF; }
+  .activity-item.payment{ border-color:#10B981; background:#ECFDF5; }
+  .activity-item.photo  { border-color:#F59E0B; background:#FFFBEB; }
+  .activity-item.message{ border-color:#8B5CF6; background:#F5F3FF; }
+  .activity-item.job    { border-color:#64748B; background:#F1F5F9; }
+
+  .worker-avatar {
+    width:32px; height:32px; border-radius:9999px;
+    display:grid; place-items:center; font-weight:800; font-size:13px;
+    color:white; flex-shrink:0;
+  }
+
+  /* Connection indicator */
+  .sync-dot {
+    width:8px; height:8px; border-radius:9999px; display:inline-block;
+    margin-right:6px; vertical-align:middle;
+  }
+  .sync-dot.online   { background:#10B981; box-shadow:0 0 6px rgba(16,185,129,.6); }
+  .sync-dot.offline  { background:#F59E0B; }
+  .sync-dot.error    { background:#EF4444; }
+  .sync-dot.connecting { background:#94A3B8; animation: blink 1.2s infinite; }
+  @keyframes blink { 50% { opacity:.3; } }
+
+  /* Install PWA banner */
+  .install-banner {
+    position:fixed; left:12px; right:12px; bottom:84px; z-index:50;
+    background:white; border-radius:16px; padding:12px;
+    box-shadow:0 8px 24px -8px rgba(0,0,0,.25);
+    display:flex; align-items:center; gap:12px;
+    animation: slideup .3s ease-out;
+  }
+
+  /* Setup needed screen */
+  .setup-warning {
+    background:#FEF3C7; color:#92400E; padding:12px 16px;
+    border-radius:12px; font-size:14px; margin-bottom:12px;
+    border:2px solid #FCD34D;
+  }
+</style>
+</head>
+<body class="bg-slate-50 text-slate-900 min-h-screen pb-28">
+
+<header id="app-header" class="bg-slate-900 text-white sticky top-0 z-40 shadow-lg hidden">
+  <div class="max-w-3xl mx-auto px-4 py-3 flex items-center gap-3">
+    <div class="w-11 h-11 rounded-xl bg-brand-500 text-white font-black grid place-items-center text-2xl shadow-md">A</div>
+    <div class="flex-1 min-w-0">
+      <div class="font-bold text-lg leading-tight flex items-center gap-1">
+        <span class="sync-dot connecting" id="sync-dot" title="Connecting..."></span>
+        A-Kats Jobs
+      </div>
+      <div class="flex items-center gap-2">
+        <span id="role-badge" class="role-badge role-worker">Worker</span>
+        <span id="user-badge" class="text-xs text-slate-300 font-semibold truncate"></span>
+      </div>
+    </div>
+    <button id="settings-btn" class="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 transition hidden" title="Settings">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="3"/>
+        <path stroke-linecap="round" stroke-linejoin="round" d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33h.01a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82v.01a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>
+      </svg>
+    </button>
+    <button id="lang-toggle" class="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 transition font-bold text-sm">
+      <span id="lang-label">ES</span>
+    </button>
+    <button id="logout-btn" class="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 transition" title="Sign out">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M15 12H3m0 0l4-4m-4 4l4 4m4-12h4a2 2 0 012 2v12a2 2 0 01-2 2h-4"/>
+      </svg>
+    </button>
+  </div>
+</header>
+
+<main id="app" class="max-w-3xl mx-auto px-4 py-4"></main>
+
+<nav id="bottom-nav" class="fixed bottom-0 left-0 right-0 bg-white border-t-2 border-slate-200 z-40 shadow-2xl hidden">
+  <div id="bottom-nav-inner" class="max-w-3xl mx-auto"></div>
+</nav>
+
+<div id="install-banner"></div>
+<div id="modal-root"></div>
+
+<!-- ============================================================
+     CONFIG — set these after creating your Supabase project
+     ============================================================ -->
+<script>
+window.AKATS_CONFIG = {
+  SUPABASE_URL:  "https://cjxnblliucvpndvrpirg.supabase.co",
+  SUPABASE_ANON: "sb_publishable_-u5OuM4sMspDY0T4bHghqQ_0DcUPaZj",
+  TENANT:        "akats",   // leave alone unless you know why to change it
+};
+</script>
+
+<script>
+/* ============================================================
+   A-Kats — Live (Supabase) v4
+   ============================================================ */
+
+/* ---------- i18n (same as v3) ---------- */
+const I18N = {
+  en: {
+    nav_home:"Home", nav_jobs:"Jobs", nav_messages:"Messages", nav_money:"Money", nav_activity:"Activity",
+    behind_title:"Behind Schedule", behind_none:"Nothing behind. Great work!",
+    today_title:"Working On", upcoming_title:"Coming Up", waiting_title:"Waiting on Payment",
+    owed_title:"Money Owed",
+    add_job:"+ New Job", new_job:"New Job", edit_job:"Edit Job",
+    field_name:"Job name", field_customer:"Customer",
+    field_address:"Address", field_phone:"Phone",
+    field_price:"Total price", field_due:"Due date", field_notes:"Notes",
+    save:"Save", cancel:"Cancel", delete:"Delete",
+    delete_confirm:"Delete this job?",
+    change_stage:"Change stage",
+    stage_quote:"Quote", stage_scheduled:"Scheduled",
+    stage_working:"Working", stage_done:"Done", stage_paid:"Paid",
+    filter_all:"All", search_ph:"Search jobs…",
+    photos:"Photos", add_photo:"+ Add photo", no_photos:"No photos yet",
+    messages:"Messages",
+    no_messages:"No messages yet. Tap a job to start.",
+    type_message:"Type a message…", send:"Send",
+    days_overdue:"days behind", day_overdue:"day behind",
+    due_today:"Due today", due_tomorrow:"Due tomorrow",
+    due_in:"Due in", days:"days",
+    no_jobs:"No jobs yet. Tap +New Job to start.",
+    saved:"Saved", deleted:"Deleted", added:"Added",
+    customer:"Customer", address:"Address", phone:"Phone",
+    price:"Price", due:"Due", notes:"Notes",
+    call:"Call", directions:"Directions",
+    select_job:"Pick a job to see messages",
+    enter_pin:"Enter your PIN", wrong_pin:"Wrong PIN. Try again.",
+    worker_view:"Worker", owner_view:"Owner", signed_out:"Signed out",
+    money_title:"Money", total:"Total", paid:"Paid", balance:"Balance",
+    pay_unpaid:"Unpaid", pay_partial:"Partial", pay_paid:"Paid",
+    payments:"Payments", add_payment:"+ Add payment",
+    no_payments:"No payments recorded",
+    payment_amount:"Amount", payment_date:"Date",
+    payment_method:"Method", payment_note:"Note (optional)",
+    method_cash:"Cash", method_check:"Check", method_card:"Card",
+    method_zelle:"Zelle", method_other:"Other",
+    delete_payment_confirm:"Delete this payment?",
+    money_summary:"Money Summary",
+    total_billed:"Total billed", total_collected:"Collected", total_owed:"Owed",
+    fully_paid:"Fully paid", awaiting:"Awaiting payment",
+    sort_owed:"Most owed first", all_jobs:"All jobs",
+    activity:"Activity", job_activity:"Job Activity",
+    recent_activity:"Recent Activity",
+    no_activity:"No activity yet",
+    act_created:"created this job",
+    act_edited:"edited job details",
+    act_stage:"moved stage to",
+    act_photo:"added a photo",
+    act_photo_del:"removed a photo",
+    act_payment:"recorded a payment",
+    act_payment_del:"removed a payment",
+    act_message:"sent a message",
+    act_deleted:"deleted job",
+    filter_worker:"Filter by worker", all_workers:"All workers",
+    settings:"Settings", workers:"Workers",
+    add_worker:"+ Add worker",
+    worker_name:"Name", worker_pin:"PIN (4 digits)",
+    worker_color:"Color",
+    edit_worker:"Edit worker", new_worker:"New worker",
+    delete_worker_confirm:"Remove this worker?",
+    owner_pin:"Owner PIN", change_owner_pin:"Change owner PIN",
+    pin_duplicate:"That PIN is already in use",
+    pin_invalid:"PIN must be 4 digits",
+    name_required:"Name is required",
+    owner_label:"Owner",
+    online:"Online", offline:"Offline", connecting:"Connecting…",
+    install_prompt:"Install as an app",
+    install_btn:"Install",
+    install_later:"Later",
+    install_ios:"Tap Share → Add to Home Screen",
+    setup_needed:"Setup needed",
+    setup_msg:"The app is not connected to a server yet. Open index.html and paste your Supabase URL and key at the top.",
+    sync_error:"Couldn't reach server",
+    loading:"Loading…",
+  },
+  es: {
+    nav_home:"Inicio", nav_jobs:"Trabajos", nav_messages:"Mensajes", nav_money:"Dinero", nav_activity:"Actividad",
+    behind_title:"Atrasados", behind_none:"¡Nada atrasado. Buen trabajo!",
+    today_title:"Trabajando", upcoming_title:"Por Hacer", waiting_title:"Esperando Pago",
+    owed_title:"Dinero Pendiente",
+    add_job:"+ Nuevo Trabajo", new_job:"Nuevo Trabajo", edit_job:"Editar Trabajo",
+    field_name:"Nombre del trabajo", field_customer:"Cliente",
+    field_address:"Dirección", field_phone:"Teléfono",
+    field_price:"Precio total", field_due:"Fecha límite", field_notes:"Notas",
+    save:"Guardar", cancel:"Cancelar", delete:"Borrar",
+    delete_confirm:"¿Borrar este trabajo?",
+    change_stage:"Cambiar etapa",
+    stage_quote:"Cotización", stage_scheduled:"Programado",
+    stage_working:"Trabajando", stage_done:"Terminado", stage_paid:"Pagado",
+    filter_all:"Todos", search_ph:"Buscar trabajos…",
+    photos:"Fotos", add_photo:"+ Agregar foto", no_photos:"Sin fotos todavía",
+    messages:"Mensajes",
+    no_messages:"Sin mensajes. Toca un trabajo para empezar.",
+    type_message:"Escribe un mensaje…", send:"Enviar",
+    days_overdue:"días atrasado", day_overdue:"día atrasado",
+    due_today:"Para hoy", due_tomorrow:"Para mañana",
+    due_in:"En", days:"días",
+    no_jobs:"Sin trabajos. Toca +Nuevo Trabajo.",
+    saved:"Guardado", deleted:"Borrado", added:"Agregado",
+    customer:"Cliente", address:"Dirección", phone:"Teléfono",
+    price:"Precio", due:"Fecha", notes:"Notas",
+    call:"Llamar", directions:"Cómo llegar",
+    select_job:"Elige un trabajo para ver mensajes",
+    enter_pin:"Ingresa tu PIN", wrong_pin:"PIN incorrecto. Intenta de nuevo.",
+    worker_view:"Trabajador", owner_view:"Dueño", signed_out:"Sesión cerrada",
+    money_title:"Dinero", total:"Total", paid:"Pagado", balance:"Pendiente",
+    pay_unpaid:"Sin pagar", pay_partial:"Parcial", pay_paid:"Pagado",
+    payments:"Pagos", add_payment:"+ Agregar pago",
+    no_payments:"Sin pagos registrados",
+    payment_amount:"Monto", payment_date:"Fecha",
+    payment_method:"Método", payment_note:"Nota (opcional)",
+    method_cash:"Efectivo", method_check:"Cheque", method_card:"Tarjeta",
+    method_zelle:"Zelle", method_other:"Otro",
+    delete_payment_confirm:"¿Borrar este pago?",
+    money_summary:"Resumen de Dinero",
+    total_billed:"Facturado", total_collected:"Cobrado", total_owed:"Pendiente",
+    fully_paid:"Pagados", awaiting:"Esperando pago",
+    sort_owed:"Más pendiente primero", all_jobs:"Todos los trabajos",
+    activity:"Actividad", job_activity:"Actividad del Trabajo",
+    recent_activity:"Actividad Reciente",
+    no_activity:"Sin actividad todavía",
+    act_created:"creó este trabajo",
+    act_edited:"editó detalles del trabajo",
+    act_stage:"cambió etapa a",
+    act_photo:"agregó una foto",
+    act_photo_del:"quitó una foto",
+    act_payment:"registró un pago",
+    act_payment_del:"quitó un pago",
+    act_message:"envió un mensaje",
+    act_deleted:"borró trabajo",
+    filter_worker:"Filtrar por trabajador", all_workers:"Todos",
+    settings:"Configuración", workers:"Trabajadores",
+    add_worker:"+ Agregar trabajador",
+    worker_name:"Nombre", worker_pin:"PIN (4 dígitos)",
+    worker_color:"Color",
+    edit_worker:"Editar trabajador", new_worker:"Nuevo trabajador",
+    delete_worker_confirm:"¿Quitar este trabajador?",
+    owner_pin:"PIN del dueño", change_owner_pin:"Cambiar PIN del dueño",
+    pin_duplicate:"Ese PIN ya está en uso",
+    pin_invalid:"El PIN debe tener 4 dígitos",
+    name_required:"El nombre es requerido",
+    owner_label:"Dueño",
+    online:"En línea", offline:"Sin conexión", connecting:"Conectando…",
+    install_prompt:"Instalar como app",
+    install_btn:"Instalar",
+    install_later:"Luego",
+    install_ios:"Toca Compartir → Añadir a pantalla de inicio",
+    setup_needed:"Configuración requerida",
+    setup_msg:"La app no está conectada al servidor. Abre index.html y pega tu URL y clave de Supabase al inicio del archivo.",
+    sync_error:"No se pudo conectar al servidor",
+    loading:"Cargando…",
+  }
+};
+
+let lang = localStorage.getItem('akats_lang') || 'en';
+const t = (k) => I18N[lang][k] || k;
+
+/* ---------- Supabase client ---------- */
+const CFG = window.AKATS_CONFIG || {};
+const CONFIGURED = CFG.SUPABASE_URL && !CFG.SUPABASE_URL.startsWith('PASTE_');
+let sb = null;
+if (CONFIGURED) {
+  try {
+    sb = supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON, {
+      auth: { persistSession: false },
+    });
+  } catch (err) {
+    console.error('Supabase init failed:', err);
+  }
+}
+const TENANT = CFG.TENANT || 'akats';
+
+let syncState = 'connecting';  // 'online' | 'offline' | 'connecting' | 'error'
+function setSyncState(s) {
+  syncState = s;
+  const el = document.getElementById('sync-dot');
+  if (!el) return;
+  el.className = 'sync-dot ' + s;
+  el.title = t(s) || s;
+}
+
+/* ---------- Local cache (so offline still works) ---------- */
+const KEY_JOBS    = 'akats_jobs_v4';
+const KEY_MSGS    = 'akats_msgs_v4';
+const KEY_USER    = 'akats_user_v4';
+const KEY_WORKERS = 'akats_workers_v4';
+const KEY_ACTIVITY = 'akats_activity_v4';
+const KEY_SETTINGS = 'akats_settings_v4';
+
+function lsGet(k, def) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : def; } catch { return def; } }
+function lsSet(k, v)   { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+
+/* ---------- Defaults ---------- */
+const DEFAULT_COLORS = ['#F97316','#3B82F6','#10B981','#8B5CF6','#EC4899','#14B8A6','#F59E0B','#6366F1'];
+
+/* ---------- State ---------- */
+let JOBS     = lsGet(KEY_JOBS, []);
+let MSGS     = lsGet(KEY_MSGS, {});  // { jobId: [msgs] }
+let WORKERS  = lsGet(KEY_WORKERS, []);
+let ACTIVITY = lsGet(KEY_ACTIVITY, []);
+let SETTINGS = lsGet(KEY_SETTINGS, { owner_pin: '9999' });
+let user     = lsGet(KEY_USER, null);
+
+let route = 'home';
+let activeJobId = null;
+let jobsFilter = 'all';
+let jobsSearch = '';
+let moneySort = 'owed';
+let activityFilter = 'all';
+let installDeferred = null;
+
+JOBS.forEach(j => {
+  if (!Array.isArray(j.payments)) j.payments = [];
+  if (!Array.isArray(j.photos)) j.photos = [];
+});
+
+/* ============================================================
+   SUPABASE DATA LAYER
+   ============================================================ */
+async function sbFetchAll() {
+  if (!sb) return;
+  try {
+    setSyncState('connecting');
+    const [jobsRes, msgsRes, workersRes, actRes, setRes] = await Promise.all([
+      sb.from('jobs').select('*').eq('tenant', TENANT).eq('deleted', false).order('updated_at', { ascending: false }),
+      sb.from('messages').select('*').eq('tenant', TENANT).order('at', { ascending: true }),
+      sb.from('workers').select('*').eq('tenant', TENANT).order('name'),
+      sb.from('activity').select('*').eq('tenant', TENANT).order('at', { ascending: false }).limit(500),
+      sb.from('settings').select('*').eq('tenant', TENANT).maybeSingle(),
+    ]);
+
+    if (jobsRes.error) throw jobsRes.error;
+    if (workersRes.error) throw workersRes.error;
+    // Messages / activity errors are non-fatal
+    JOBS = (jobsRes.data || []).map(normalizeJob);
+    WORKERS = workersRes.data || [];
+    ACTIVITY = actRes.data || [];
+    MSGS = {};
+    (msgsRes.data || []).forEach(m => {
+      (MSGS[m.job_id] = MSGS[m.job_id] || []).push({
+        at: Number(m.at), text: m.text, userId: m.user_id, userName: m.user_name, id: m.id,
+      });
+    });
+    if (setRes.data) SETTINGS = { owner_pin: setRes.data.owner_pin };
+
+    // If this is the very first load (no workers in DB), seed defaults
+    if (WORKERS.length === 0) {
+      const seed = [
+        { id:'w1', name:'Juan', pin:'1234', color:DEFAULT_COLORS[1] },
+        { id:'w2', name:'Mike', pin:'2345', color:DEFAULT_COLORS[2] },
+        { id:'w3', name:'Luis', pin:'3456', color:DEFAULT_COLORS[3] },
+      ];
+      for (const w of seed) {
+        await sb.from('workers').upsert({ ...w, tenant: TENANT });
+      }
+      WORKERS = seed;
+    }
+
+    lsSet(KEY_JOBS, JOBS);
+    lsSet(KEY_MSGS, MSGS);
+    lsSet(KEY_WORKERS, WORKERS);
+    lsSet(KEY_ACTIVITY, ACTIVITY);
+    lsSet(KEY_SETTINGS, SETTINGS);
+
+    setSyncState('online');
+    if (user) render();
+    else renderLock();
+  } catch (err) {
+    console.error('Fetch error:', err);
+    setSyncState('error');
+    toast(t('sync_error'), true);
+  }
+}
+
+function normalizeJob(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    customer: row.customer || '',
+    address: row.address || '',
+    phone: row.phone || '',
+    price: row.price == null ? '' : Number(row.price),
+    due: row.due || '',
+    stage: row.stage || 'quote',
+    notes: row.notes || '',
+    photos: row.photos || [],
+    payments: row.payments || [],
+  };
+}
+
+function jobToRow(j) {
+  return {
+    id: j.id, tenant: TENANT, name: j.name,
+    customer: j.customer || null, address: j.address || null,
+    phone: j.phone || null, price: j.price === '' ? null : Number(j.price),
+    due: j.due || null, stage: j.stage, notes: j.notes || null,
+    photos: j.photos || [], payments: j.payments || [],
+    updated_at: new Date().toISOString(), deleted: false,
+  };
+}
+
+async function sbUpsertJob(j) {
+  if (!sb) return;
+  const { error } = await sb.from('jobs').upsert(jobToRow(j));
+  if (error) { console.error(error); toast(t('sync_error'), true); }
+}
+async function sbDeleteJob(id) {
+  if (!sb) return;
+  await sb.from('jobs').update({ deleted: true, updated_at: new Date().toISOString() }).eq('id', id).eq('tenant', TENANT);
+}
+async function sbInsertMessage(jobId, msg) {
+  if (!sb) return;
+  await sb.from('messages').insert({
+    tenant: TENANT, job_id: jobId, user_id: msg.userId,
+    user_name: msg.userName, text: msg.text, at: msg.at,
+  });
+}
+async function sbInsertActivity(a) {
+  if (!sb) return;
+  await sb.from('activity').insert({
+    tenant: TENANT, job_id: a.jobId || null, user_id: a.userId,
+    user_name: a.userName, user_role: a.userRole,
+    type: a.type, data: a.data || {}, at: a.at,
+  });
+}
+async function sbUpsertWorker(w) {
+  if (!sb) return;
+  await sb.from('workers').upsert({ ...w, tenant: TENANT, updated_at: new Date().toISOString() });
+}
+async function sbDeleteWorker(id) {
+  if (!sb) return;
+  await sb.from('workers').delete().eq('id', id).eq('tenant', TENANT);
+}
+async function sbSetOwnerPin(pin) {
+  if (!sb) return;
+  await sb.from('settings').upsert({ tenant: TENANT, owner_pin: pin, updated_at: new Date().toISOString() });
+}
+
+/* ---------- Realtime subscriptions ---------- */
+function startRealtime() {
+  if (!sb) return;
+  const channel = sb.channel('akats-' + TENANT);
+  channel
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'jobs', filter: `tenant=eq.${TENANT}` }, (payload) => {
+      const row = payload.new || payload.old;
+      if (payload.eventType === 'DELETE' || row.deleted) {
+        JOBS = JOBS.filter(j => j.id !== row.id);
+      } else {
+        const nj = normalizeJob(row);
+        const i = JOBS.findIndex(j => j.id === nj.id);
+        if (i >= 0) JOBS[i] = nj; else JOBS.unshift(nj);
+      }
+      lsSet(KEY_JOBS, JOBS);
+      if (user) render();
+    })
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `tenant=eq.${TENANT}` }, (payload) => {
+      const m = payload.new;
+      (MSGS[m.job_id] = MSGS[m.job_id] || []).push({
+        at: Number(m.at), text: m.text, userId: m.user_id, userName: m.user_name, id: m.id,
+      });
+      lsSet(KEY_MSGS, MSGS);
+      if (user) render();
+    })
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'activity', filter: `tenant=eq.${TENANT}` }, (payload) => {
+      ACTIVITY.unshift(payload.new);
+      if (ACTIVITY.length > 500) ACTIVITY.length = 500;
+      lsSet(KEY_ACTIVITY, ACTIVITY);
+      if (user) render();
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'workers', filter: `tenant=eq.${TENANT}` }, async () => {
+      const { data } = await sb.from('workers').select('*').eq('tenant', TENANT).order('name');
+      WORKERS = data || [];
+      lsSet(KEY_WORKERS, WORKERS);
+      if (user) render();
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'settings', filter: `tenant=eq.${TENANT}` }, (payload) => {
+      if (payload.new) SETTINGS = { owner_pin: payload.new.owner_pin };
+      lsSet(KEY_SETTINGS, SETTINGS);
+    })
+    .subscribe((status) => {
+      if (status === 'SUBSCRIBED') setSyncState('online');
+      else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') setSyncState('error');
+    });
+}
+
+/* ---------- Helpers ---------- */
+function isOwner() { return user && user.role === 'owner'; }
+function getOwnerPin() { return SETTINGS.owner_pin || '9999'; }
+function id() { return Math.random().toString(36).slice(2,10); }
+
+function daysBetween(dateStr) {
+  if (!dateStr) return null;
+  const today = new Date(); today.setHours(0,0,0,0);
+  const due = new Date(dateStr); due.setHours(0,0,0,0);
+  return Math.round((due - today) / 86400000);
+}
+function isOverdue(j) {
+  if (j.stage === 'done' || j.stage === 'paid') return false;
+  const d = daysBetween(j.due);
+  return d !== null && d < 0;
+}
+function dueLabel(j) {
+  const d = daysBetween(j.due);
+  if (d === null) return '';
+  if (d < 0)  return Math.abs(d) === 1 ? `1 ${t('day_overdue')}` : `${Math.abs(d)} ${t('days_overdue')}`;
+  if (d === 0) return t('due_today');
+  if (d === 1) return t('due_tomorrow');
+  return `${t('due_in')} ${d} ${t('days')}`;
+}
+function stageLabel(s) {
+  return { quote:t('stage_quote'), scheduled:t('stage_scheduled'),
+           working:t('stage_working'), done:t('stage_done'), paid:t('stage_paid') }[s] || s;
+}
+function fmtMoney(n) {
+  if (n === '' || n === null || n === undefined || isNaN(n)) return '';
+  return '$' + Number(n).toLocaleString(undefined, { minimumFractionDigits:0, maximumFractionDigits:2 });
+}
+function totalPaid(j) { return (j.payments||[]).reduce((s,p)=> s + Number(p.amount||0), 0); }
+function balance(j)  { return Math.max(0, Number(j.price||0) - totalPaid(j)); }
+function payStatus(j) {
+  const price = Number(j.price||0);
+  if (!price) return null;
+  const paid = totalPaid(j);
+  if (paid <= 0) return 'unpaid';
+  if (paid >= price) return 'paid';
+  return 'partial';
+}
+function payStatusLabel(s) {
+  return { unpaid:t('pay_unpaid'), partial:t('pay_partial'), paid:t('pay_paid') }[s] || '';
+}
+function methodLabel(m) {
+  return { cash:t('method_cash'), check:t('method_check'), card:t('method_card'),
+           zelle:t('method_zelle'), other:t('method_other') }[m] || m;
+}
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function toast(msg, isErr) {
+  const el = document.createElement('div');
+  el.className = 'toast' + (isErr ? ' error' : '');
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(()=>el.remove(), 2600);
+}
+function initials(name) {
+  if (!name) return '?';
+  return name.trim().split(/\s+/).slice(0,2).map(p => p[0]).join('').toUpperCase();
+}
+function userAvatar(u, size=32) {
+  const color = u?.color || '#64748B';
+  return `<div class="worker-avatar" style="background:${color}; width:${size}px; height:${size}px; font-size:${Math.round(size*0.4)}px">${initials(u?.name)}</div>`;
+}
+function findWorker(uid) {
+  if (uid === 'owner') return { id:'owner', name:t('owner_label'), color:'#0F172A' };
+  return WORKERS.find(w => w.id === uid) || { id:uid, name:'?', color:'#64748B' };
+}
+function relativeTime(ts) {
+  const s = Math.round((Date.now() - ts) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s/60)}m ago`;
+  if (s < 86400) return `${Math.floor(s/3600)}h ago`;
+  if (s < 604800) return `${Math.floor(s/86400)}d ago`;
+  return new Date(ts).toLocaleDateString();
+}
+
+/* ---------- Activity logging ---------- */
+function logActivity(type, jobId, data={}) {
+  if (!user) return;
+  const entry = {
+    at: Date.now(), type, job_id: jobId, jobId,
+    user_id: user.id, userId: user.id,
+    user_name: user.name, userName: user.name,
+    user_role: user.role, userRole: user.role,
+    data,
+  };
+  ACTIVITY.unshift(entry);
+  if (ACTIVITY.length > 500) ACTIVITY.length = 500;
+  lsSet(KEY_ACTIVITY, ACTIVITY);
+  sbInsertActivity(entry);
+}
+function activityForJob(jobId) {
+  return ACTIVITY.filter(a => (a.jobId || a.job_id) === jobId);
+}
+function activityText(a) {
+  const stage = a.data?.stage;
+  const amount = a.data?.amount;
+  switch (a.type) {
+    case 'created':     return t('act_created');
+    case 'edited':      return t('act_edited');
+    case 'stage':       return `${t('act_stage')} ${stageLabel(stage)}`;
+    case 'photo':       return t('act_photo');
+    case 'photo_del':   return t('act_photo_del');
+    case 'payment':     return `${t('act_payment')} (${fmtMoney(amount)})`;
+    case 'payment_del': return t('act_payment_del');
+    case 'message':     return t('act_message');
+    case 'deleted':     return t('act_deleted');
+    default: return a.type;
+  }
+}
+function activityIcon(type) {
+  const cls = {
+    stage:'stage', payment:'payment', payment_del:'payment',
+    photo:'photo', photo_del:'photo',
+    message:'message', created:'job', edited:'job', deleted:'job',
+  }[type] || 'job';
+  return cls;
+}
+
+/* ============================================================
+   LOCK SCREEN
+   ============================================================ */
+let pinBuffer = '';
+let pinError = false;
+
+function renderLock() {
+  document.getElementById('app-header').classList.add('hidden');
+  document.getElementById('bottom-nav').classList.add('hidden');
+  document.body.className = 'bg-slate-900 text-white min-h-screen';
+  const app = document.getElementById('app');
+  app.className = 'max-w-md mx-auto px-4 py-8 flex flex-col items-center justify-center min-h-screen';
+
+  const setupWarning = !CONFIGURED ? `
+    <div class="setup-warning mb-4 max-w-xs">
+      <div class="font-extrabold mb-1">⚠️ ${t('setup_needed')}</div>
+      <div>${t('setup_msg')}</div>
+    </div>` : '';
+
+  app.innerHTML = `
+    ${setupWarning}
+    <div class="w-16 h-16 rounded-2xl bg-brand-500 grid place-items-center text-3xl font-black mb-4 shadow-xl">A</div>
+    <div class="text-2xl font-extrabold mb-1">A-Kats Jobs</div>
+    <div class="text-sm text-slate-400 mb-2">${t('enter_pin')}</div>
+    <button onclick="lang = lang==='en'?'es':'en'; localStorage.setItem('akats_lang',lang); renderLock();" class="text-xs text-slate-500 hover:text-slate-300 mb-8 underline">
+      ${lang==='en' ? 'Español' : 'English'}
+    </button>
+
+    <div class="flex gap-3 mb-2 h-6 items-center">
+      ${[0,1,2,3].map(i => `<div class="pin-dot ${i < pinBuffer.length ? 'filled' : ''}"></div>`).join('')}
+    </div>
+    <div class="h-6 mb-6 text-sm font-bold ${pinError ? 'text-red-400' : 'text-transparent'}">
+      ${pinError ? t('wrong_pin') : '·'}
+    </div>
+
+    <div class="grid grid-cols-3 gap-3 w-full max-w-xs">
+      ${[1,2,3,4,5,6,7,8,9].map(n => `<button class="pin-key" onclick="pinPress('${n}')">${n}</button>`).join('')}
+      <button class="pin-key danger" onclick="pinClear()">⌫</button>
+      <button class="pin-key" onclick="pinPress('0')">0</button>
+      <button class="pin-key danger" onclick="pinBackspace()">←</button>
+    </div>
+  `;
+}
+
+function pinPress(d) {
+  pinError = false;
+  if (pinBuffer.length >= 4) return;
+  pinBuffer += d;
+  if (pinBuffer.length === 4) setTimeout(checkPin, 120);
+  else renderLock();
+}
+function pinBackspace() { pinBuffer = pinBuffer.slice(0,-1); pinError=false; renderLock(); }
+function pinClear()      { pinBuffer = ''; pinError=false; renderLock(); }
+
+function checkPin() {
+  if (pinBuffer === getOwnerPin()) {
+    signIn({ id:'owner', name:t('owner_label'), role:'owner', color:'#0F172A' });
+    return;
+  }
+  const w = WORKERS.find(x => x.pin === pinBuffer);
+  if (w) {
+    signIn({ id:w.id, name:w.name, role:'worker', color:w.color });
+    return;
+  }
+  pinError = true; pinBuffer = ''; renderLock();
+}
+
+function signIn(u) {
+  user = u;
+  lsSet(KEY_USER, u);
+  pinBuffer = ''; pinError = false;
+  route = 'home';
+  bootApp();
+}
+
+function logout() {
+  user = null;
+  localStorage.removeItem(KEY_USER);
+  pinBuffer = ''; pinError = false;
+  renderLock();
+}
+
+/* ============================================================
+   APP SHELL
+   ============================================================ */
+function bootApp() {
+  document.body.className = 'bg-slate-50 text-slate-900 min-h-screen pb-28';
+  document.getElementById('app').className = 'max-w-3xl mx-auto px-4 py-4';
+  document.getElementById('app-header').classList.remove('hidden');
+  document.getElementById('bottom-nav').classList.remove('hidden');
+
+  const badge = document.getElementById('role-badge');
+  badge.textContent = isOwner() ? t('owner_view') : t('worker_view');
+  badge.className = 'role-badge ' + (isOwner() ? 'role-owner' : 'role-worker');
+  document.getElementById('user-badge').textContent = user.name;
+  document.getElementById('lang-label').textContent = lang === 'en' ? 'ES' : 'EN';
+  document.getElementById('settings-btn').classList.toggle('hidden', !isOwner());
+
+  const tabs = isOwner()
+    ? [
+        { r:'home',     label:t('nav_home'),     icon:'home' },
+        { r:'jobs',     label:t('nav_jobs'),     icon:'jobs' },
+        { r:'money',    label:t('nav_money'),    icon:'money' },
+        { r:'activity', label:t('nav_activity'), icon:'activity' },
+        { r:'messages', label:t('nav_messages'), icon:'msg' },
+      ]
+    : [
+        { r:'home',     label:t('nav_home'),     icon:'home' },
+        { r:'jobs',     label:t('nav_jobs'),     icon:'jobs' },
+        { r:'messages', label:t('nav_messages'), icon:'msg' },
+      ];
+  const icons = {
+    home:`<svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l9-9 9 9M5 10v10h14V10"/></svg>`,
+    jobs:`<svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 7h16M4 12h16M4 17h16"/></svg>`,
+    money:`<svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v18M7 7h7a3 3 0 010 6H10a3 3 0 000 6h7"/></svg>`,
+    activity:`<svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h10"/><circle cx="20" cy="18" r="1.5"/></svg>`,
+    msg:`<svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 5h18v12H7l-4 4z"/></svg>`,
+  };
+  const nav = document.getElementById('bottom-nav-inner');
+  nav.style.display = 'grid';
+  nav.style.gridTemplateColumns = `repeat(${tabs.length}, 1fr)`;
+  nav.innerHTML = tabs.map(tab => `
+    <button data-route="${tab.r}" class="bottom-link">
+      ${icons[tab.icon]}
+      <span class="text-[11px] font-bold mt-1">${tab.label}</span>
+    </button>`).join('');
+  nav.querySelectorAll('[data-route]').forEach(b => {
+    b.addEventListener('click', () => {
+      route = b.dataset.route;
+      if (route !== 'messages') activeJobId = null;
+      render();
+    });
+  });
+
+  render();
+  maybeShowInstallBanner();
+}
+
+function render() {
+  document.querySelectorAll('.bottom-link').forEach(b => {
+    b.classList.toggle('active', b.dataset.route === route);
+  });
+  const app = document.getElementById('app');
+  if (route === 'home')          app.innerHTML = renderHome();
+  else if (route === 'jobs')     app.innerHTML = renderJobsList();
+  else if (route === 'money')    app.innerHTML = isOwner() ? renderMoney() : renderHome();
+  else if (route === 'activity') app.innerHTML = isOwner() ? renderActivity() : renderHome();
+  else if (route === 'messages') app.innerHTML = renderMessages();
+  attachListHandlers();
+}
+
+/* ---------- HOME ---------- */
+function renderHome() {
+  const overdue  = JOBS.filter(isOverdue).sort((a,b)=> daysBetween(a.due)-daysBetween(b.due));
+  const working  = JOBS.filter(j => j.stage === 'working' && !isOverdue(j));
+  const upcoming = JOBS.filter(j => j.stage === 'scheduled' && !isOverdue(j))
+                       .sort((a,b)=> (daysBetween(a.due)??99) - (daysBetween(b.due)??99));
+  const waiting  = JOBS.filter(j => j.stage === 'done');
+  const owed = isOwner()
+    ? JOBS.filter(j => Number(j.price||0) > 0 && balance(j) > 0 && j.stage !== 'quote')
+            .sort((a,b)=> balance(b) - balance(a))
+    : [];
+
+  const section = (title, jobs, emptyMsg, opts={}) => `
+    <section class="mb-6">
+      <div class="flex items-center gap-2 mb-3 px-1">
+        ${opts.alert && jobs.length ? '<span class="pulse-dot"></span>' : ''}
+        <h2 class="text-lg font-extrabold ${opts.alert && jobs.length ? 'text-red-700' : opts.money && jobs.length ? 'text-amber-700' : 'text-slate-800'}">
+          ${title}
+        </h2>
+        ${jobs.length ? `<span class="text-sm font-bold ${opts.alert ? 'text-red-600' : opts.money ? 'text-amber-600' : 'text-slate-500'}">(${jobs.length})</span>` : ''}
+      </div>
+      ${jobs.length === 0
+        ? `<div class="text-sm text-slate-500 px-1 py-2">${emptyMsg}</div>`
+        : jobs.map(j => jobCard(j, opts)).join('')}
+    </section>`;
+
+  return `
+    <div class="mb-4">
+      <button onclick="openJobForm()" class="w-full bg-brand-500 hover:bg-brand-600 text-white font-extrabold text-lg py-4 rounded-2xl shadow-md transition active:scale-95">
+        ${t('add_job')}
+      </button>
+    </div>
+    ${section(t('behind_title'), overdue, t('behind_none'), { alert:true })}
+    ${isOwner() ? section(t('owed_title'), owed, '—', { money:true }) : ''}
+    ${section(t('today_title'), working, '—')}
+    ${section(t('upcoming_title'), upcoming, '—')}
+    ${section(t('waiting_title'), waiting, '—')}
+  `;
+}
+
+function jobCard(j, opts={}) {
+  const due = dueLabel(j);
+  const dueColor = isOverdue(j) ? 'text-red-700 font-bold' : 'text-slate-600';
+  const cardClass = opts.alert ? 'overdue-card'
+                  : opts.money ? 'money-card border-amber-200'
+                  : 'bg-white border-slate-200';
+  const status = isOwner() ? payStatus(j) : null;
+  return `
+    <div onclick="openJobDetail('${j.id}')"
+         class="${cardClass} border-2 rounded-2xl p-4 mb-3 cursor-pointer active:scale-99 transition shadow-sm hover:shadow-md">
+      <div class="flex items-start justify-between gap-3">
+        <div class="flex-1 min-w-0">
+          <div class="font-bold text-base text-slate-900 truncate">${escapeHtml(j.name)}</div>
+          <div class="text-sm text-slate-600 truncate">${escapeHtml(j.customer || '')}</div>
+        </div>
+        <div class="flex flex-col items-end gap-1">
+          <span class="stage-${j.stage} text-xs font-bold px-3 py-1.5 rounded-full whitespace-nowrap">
+            ${stageLabel(j.stage)}
+          </span>
+          ${status ? `<span class="pay-${status} text-xs font-bold px-2.5 py-1 rounded-full whitespace-nowrap">${payStatusLabel(status)}</span>` : ''}
+        </div>
+      </div>
+      <div class="flex items-center justify-between mt-3 text-sm">
+        <span class="${dueColor} flex items-center gap-1">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path stroke-linecap="round" d="M12 7v5l3 2"/></svg>
+          ${due}
+        </span>
+        ${isOwner() && opts.money && balance(j) > 0
+          ? `<span class="font-extrabold text-amber-700">${fmtMoney(balance(j))} ${t('balance').toLowerCase()}</span>`
+          : isOwner() && j.price ? `<span class="font-bold text-slate-700">${fmtMoney(j.price)}</span>` : ''}
+      </div>
+    </div>`;
+}
+
+/* ---------- JOBS LIST ---------- */
+function renderJobsList() {
+  const stages = ['all','quote','scheduled','working','done','paid'];
+  let list = JOBS.slice();
+  if (jobsFilter !== 'all') list = list.filter(j => j.stage === jobsFilter);
+  if (jobsSearch.trim()) {
+    const q = jobsSearch.toLowerCase();
+    list = list.filter(j =>
+      (j.name||'').toLowerCase().includes(q) ||
+      (j.customer||'').toLowerCase().includes(q) ||
+      (j.address||'').toLowerCase().includes(q));
+  }
+  list.sort((a,b) => {
+    const ao = isOverdue(a)?0:1, bo = isOverdue(b)?0:1;
+    if (ao !== bo) return ao - bo;
+    return (daysBetween(a.due)??999) - (daysBetween(b.due)??999);
+  });
+
+  return `
+    <div class="mb-4">
+      <button onclick="openJobForm()" class="w-full bg-brand-500 hover:bg-brand-600 text-white font-extrabold text-lg py-4 rounded-2xl shadow-md transition active:scale-95">
+        ${t('add_job')}
+      </button>
+    </div>
+    <input id="jobs-search" type="search" placeholder="${t('search_ph')}" value="${escapeHtml(jobsSearch)}"
+      class="w-full px-4 py-3 mb-3 rounded-xl border-2 border-slate-200 focus:border-brand-400 focus:outline-none text-base" />
+    <div class="flex gap-2 mb-4 overflow-x-auto scroll-x pb-1">
+      ${stages.map(s => `
+        <button onclick="setFilter('${s}')"
+          class="px-4 py-2 rounded-full font-bold text-sm whitespace-nowrap transition ${jobsFilter===s ? 'bg-slate-900 text-white' : 'bg-white border-2 border-slate-200 text-slate-700 hover:border-slate-400'}">
+          ${s==='all' ? t('filter_all') : stageLabel(s)}
+        </button>`).join('')}
+    </div>
+    ${list.length === 0
+      ? `<div class="text-center text-slate-500 py-12">${t('no_jobs')}</div>`
+      : list.map(j => jobCard(j)).join('')}
+  `;
+}
+
+function attachListHandlers() {
+  const s = document.getElementById('jobs-search');
+  if (s) s.addEventListener('input', e => {
+    jobsSearch = e.target.value;
+    const app = document.getElementById('app');
+    const scroll = window.scrollY;
+    app.innerHTML = renderJobsList();
+    window.scrollTo(0, scroll);
+    const s2 = document.getElementById('jobs-search');
+    if (s2) { s2.focus(); s2.setSelectionRange(s2.value.length, s2.value.length); }
+    attachListHandlers();
+  });
+}
+function setFilter(f) { jobsFilter = f; render(); }
+
+/* ---------- JOB DETAIL ---------- */
+function openJobDetail(jobId) {
+  const j = JOBS.find(x => x.id === jobId);
+  if (!j) return;
+  const stages = ['quote','scheduled','working','done','paid'];
+  const status = isOwner() ? payStatus(j) : null;
+
+  modal(`
+    <div class="flex items-start justify-between gap-3 mb-4">
+      <div class="flex-1 min-w-0">
+        <div class="text-2xl font-extrabold text-slate-900">${escapeHtml(j.name)}</div>
+        <div class="text-sm text-slate-600">${escapeHtml(j.customer || '')}</div>
+      </div>
+      <button onclick="closeModal()" class="w-10 h-10 rounded-full bg-slate-100 hover:bg-slate-200 grid place-items-center text-xl font-bold">×</button>
+    </div>
+
+    ${isOverdue(j) ? `
+      <div class="bg-red-50 border-2 border-red-200 rounded-xl p-3 mb-4 flex items-center gap-2">
+        <span class="pulse-dot"></span>
+        <span class="font-bold text-red-700">${dueLabel(j)}</span>
+      </div>` : ''}
+
+    <div class="mb-5">
+      <div class="text-xs font-bold text-slate-500 uppercase mb-2">${t('change_stage')}</div>
+      <div class="grid grid-cols-5 gap-1.5">
+        ${stages.map(s => `
+          <button onclick="setStage('${j.id}','${s}')" class="stage-btn text-xs ${j.stage===s?'active':''}">
+            ${stageLabel(s)}
+          </button>`).join('')}
+      </div>
+    </div>
+
+    <div class="grid grid-cols-2 gap-2 mb-5">
+      ${j.phone ? `<a href="tel:${j.phone}" class="bg-green-500 hover:bg-green-600 text-white font-bold py-3 rounded-xl text-center flex items-center justify-center gap-2">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M3 5c0 9 7 16 16 16l2-4-5-2-2 2c-3-1-5-3-6-6l2-2-2-5z"/></svg>
+        ${t('call')}
+      </a>` : '<div></div>'}
+      ${j.address ? `<a href="https://maps.google.com/?q=${encodeURIComponent(j.address)}" target="_blank" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 rounded-xl text-center flex items-center justify-center gap-2">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 22s7-7 7-13a7 7 0 10-14 0c0 6 7 13 7 13z"/><circle cx="12" cy="9" r="2.5"/></svg>
+        ${t('directions')}
+      </a>` : '<div></div>'}
+    </div>
+
+    <div class="space-y-2 mb-5 text-sm">
+      ${j.address ? row(t('address'), escapeHtml(j.address)) : ''}
+      ${j.phone ? row(t('phone'), escapeHtml(j.phone)) : ''}
+      ${isOwner() && j.price ? row(t('price'), fmtMoney(j.price)) : ''}
+      ${j.due ? row(t('due'), j.due + (dueLabel(j) ? ` <span class="text-xs ${isOverdue(j)?'text-red-600 font-bold':'text-slate-500'}">(${dueLabel(j)})</span>` : '')) : ''}
+      ${j.notes ? row(t('notes'), escapeHtml(j.notes)) : ''}
+    </div>
+
+    ${isOwner() && j.price ? renderPaymentSection(j, status) : ''}
+
+    <div class="mb-5">
+      <div class="flex items-center justify-between mb-2">
+        <div class="text-xs font-bold text-slate-500 uppercase">${t('photos')} (${(j.photos||[]).length})</div>
+      </div>
+      ${(j.photos && j.photos.length) ? `
+        <div class="grid grid-cols-3 gap-2 mb-2">
+          ${j.photos.map((p,i) => {
+            const src = typeof p === 'string' ? p : p.data;
+            const by = typeof p === 'object' ? p.by : null;
+            return `
+              <div class="photo-tile">
+                <img src="${src}" alt="" />
+                ${by ? `<div class="absolute bottom-1 left-1" title="${escapeHtml(findWorker(by).name)}">${userAvatar(findWorker(by), 22)}</div>` : ''}
+                <button onclick="deletePhoto('${j.id}',${i})" class="absolute top-1 right-1 w-7 h-7 bg-black/60 text-white rounded-full text-sm font-bold hover:bg-black/80" style="min-height:auto">×</button>
+              </div>`;
+          }).join('')}
+        </div>` : `<div class="text-sm text-slate-400 mb-2">${t('no_photos')}</div>`}
+      <label class="block w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 rounded-xl text-center cursor-pointer transition">
+        ${t('add_photo')}
+        <input type="file" accept="image/*" capture="environment" onchange="addPhoto('${j.id}', this)" class="hidden" />
+      </label>
+    </div>
+
+    ${isOwner() ? renderJobActivity(j.id) : ''}
+
+    <div class="grid grid-cols-2 gap-2 pt-3 border-t border-slate-200">
+      <button onclick="openJobForm('${j.id}')" class="bg-slate-900 hover:bg-slate-800 text-white font-bold py-3 rounded-xl">
+        ✎ ${t('edit_job')}
+      </button>
+      <button onclick="deleteJob('${j.id}')" class="bg-red-50 hover:bg-red-100 text-red-700 font-bold py-3 rounded-xl border-2 border-red-200">
+        🗑 ${t('delete')}
+      </button>
+    </div>
+  `);
+}
+
+function renderJobActivity(jobId) {
+  const acts = activityForJob(jobId).slice(0, 20);
+  if (acts.length === 0) return '';
+  return `
+    <div class="mb-5">
+      <div class="text-xs font-bold text-slate-500 uppercase mb-2">${t('job_activity')}</div>
+      <div>
+        ${acts.map(a => activityRow(a, false)).join('')}
+      </div>
+    </div>`;
+}
+
+function renderPaymentSection(j, status) {
+  const total = Number(j.price||0);
+  const paid = totalPaid(j);
+  const bal = balance(j);
+  return `
+    <div class="mb-5 bg-slate-50 border-2 border-slate-200 rounded-2xl p-4">
+      <div class="flex items-center justify-between mb-3">
+        <div class="text-xs font-bold text-slate-500 uppercase">${t('payments')}</div>
+        ${status ? `<span class="pay-${status} text-xs font-bold px-2.5 py-1 rounded-full">${payStatusLabel(status)}</span>` : ''}
+      </div>
+      <div class="grid grid-cols-3 gap-2 mb-4 text-center">
+        <div class="bg-white rounded-xl p-2">
+          <div class="text-[10px] font-bold text-slate-500 uppercase">${t('total')}</div>
+          <div class="font-extrabold text-slate-900">${fmtMoney(total)}</div>
+        </div>
+        <div class="bg-white rounded-xl p-2">
+          <div class="text-[10px] font-bold text-slate-500 uppercase">${t('paid')}</div>
+          <div class="font-extrabold text-green-700">${fmtMoney(paid)}</div>
+        </div>
+        <div class="bg-white rounded-xl p-2">
+          <div class="text-[10px] font-bold text-slate-500 uppercase">${t('balance')}</div>
+          <div class="font-extrabold ${bal>0?'text-amber-700':'text-slate-400'}">${fmtMoney(bal)}</div>
+        </div>
+      </div>
+      ${(j.payments||[]).length ? `
+        <div class="space-y-1.5 mb-3">
+          ${j.payments.map(p => `
+            <div class="flex items-center justify-between bg-white rounded-xl px-3 py-2">
+              <div class="flex-1 min-w-0">
+                <div class="font-bold text-sm">${fmtMoney(p.amount)} <span class="text-xs font-medium text-slate-500">· ${methodLabel(p.method)}</span></div>
+                <div class="text-xs text-slate-500">${p.date}${p.note ? ' · '+escapeHtml(p.note) : ''}</div>
+              </div>
+              <button onclick="deletePayment('${j.id}','${p.id}')" class="w-8 h-8 rounded-full hover:bg-red-50 text-red-500 grid place-items-center text-lg" style="min-height:auto">×</button>
+            </div>`).join('')}
+        </div>` : `<div class="text-sm text-slate-400 mb-3 text-center">${t('no_payments')}</div>`}
+      <button onclick="openPaymentForm('${j.id}')" class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-2.5 rounded-xl">
+        ${t('add_payment')}
+      </button>
+    </div>`;
+}
+
+function row(label, val) {
+  return `<div class="flex justify-between gap-3 py-2 border-b border-slate-100 last:border-0">
+    <span class="text-slate-500 font-medium">${label}</span>
+    <span class="text-slate-900 font-semibold text-right">${val}</span>
+  </div>`;
+}
+
+async function setStage(jobId, stage) {
+  const j = JOBS.find(x => x.id === jobId); if (!j) return;
+  if (j.stage === stage) { closeModal(); return; }
+  j.stage = stage;
+  lsSet(KEY_JOBS, JOBS);
+  await sbUpsertJob(j);
+  logActivity('stage', jobId, { stage });
+  toast(t('saved')); closeModal(); render();
+}
+async function deleteJob(jobId) {
+  if (!confirm(t('delete_confirm'))) return;
+  const j = JOBS.find(x => x.id === jobId);
+  logActivity('deleted', jobId, { name: j?.name });
+  JOBS = JOBS.filter(j => j.id !== jobId);
+  lsSet(KEY_JOBS, JOBS);
+  await sbDeleteJob(jobId);
+  delete MSGS[jobId]; lsSet(KEY_MSGS, MSGS);
+  toast(t('deleted')); closeModal(); render();
+}
+
+/* ---------- JOB FORM ---------- */
+function openJobForm(jobId) {
+  const editing = jobId ? JOBS.find(j => j.id === jobId) : null;
+  const j = editing || { name:'', customer:'', address:'', phone:'', price:'', due:'', stage:'quote', notes:'', photos:[], payments:[] };
+  modal(`
+    <div class="flex items-start justify-between gap-3 mb-4">
+      <div class="text-2xl font-extrabold">${editing ? t('edit_job') : t('new_job')}</div>
+      <button onclick="closeModal()" class="w-10 h-10 rounded-full bg-slate-100 hover:bg-slate-200 grid place-items-center text-xl font-bold">×</button>
+    </div>
+    <form id="job-form" onsubmit="event.preventDefault(); saveJob(${editing ? `'${editing.id}'` : 'null'});" class="space-y-3">
+      ${field('name', t('field_name'), j.name, 'text', true)}
+      ${field('customer', t('field_customer'), j.customer)}
+      ${field('address', t('field_address'), j.address)}
+      ${field('phone', t('field_phone'), j.phone, 'tel')}
+      <div class="grid grid-cols-2 gap-3">
+        ${isOwner()
+          ? field('price', t('field_price'), j.price, 'number')
+          : `<input type="hidden" name="price" value="${escapeHtml(j.price ?? '')}" />`}
+        ${field('due', t('field_due'), j.due, 'date')}
+      </div>
+      <div>
+        <label class="block text-xs font-bold text-slate-600 uppercase mb-1">${t('field_notes')}</label>
+        <textarea name="notes" rows="3" class="w-full px-4 py-3 rounded-xl border-2 border-slate-200 focus:border-brand-400 focus:outline-none text-base">${escapeHtml(j.notes||'')}</textarea>
+      </div>
+      <div class="grid grid-cols-2 gap-2 pt-2">
+        <button type="button" onclick="closeModal()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 rounded-xl">${t('cancel')}</button>
+        <button type="submit" class="bg-brand-500 hover:bg-brand-600 text-white font-extrabold py-3 rounded-xl">${t('save')}</button>
+      </div>
+    </form>
+  `);
+  setTimeout(() => document.querySelector('#job-form [name="name"]')?.focus(), 50);
+}
+function field(name, label, value, type='text', required=false) {
+  return `<div>
+    <label class="block text-xs font-bold text-slate-600 uppercase mb-1">${label}${required?' *':''}</label>
+    <input name="${name}" type="${type}" value="${escapeHtml(value??'')}" ${required?'required':''}
+      class="w-full px-4 py-3 rounded-xl border-2 border-slate-200 focus:border-brand-400 focus:outline-none text-base" />
+  </div>`;
+}
+async function saveJob(jobId) {
+  const f = document.getElementById('job-form');
+  const data = Object.fromEntries(new FormData(f).entries());
+  if (!data.name.trim()) return;
+  data.price = data.price ? Number(data.price) : '';
+  let j;
+  if (jobId) {
+    j = JOBS.find(x => x.id === jobId);
+    Object.assign(j, data);
+    logActivity('edited', jobId);
+    toast(t('saved'));
+  } else {
+    j = { id:id(), stage:'quote', photos:[], payments:[], ...data };
+    JOBS.unshift(j);
+    logActivity('created', j.id, { name: j.name });
+    toast(t('added'));
+  }
+  lsSet(KEY_JOBS, JOBS);
+  await sbUpsertJob(j);
+  closeModal(); render();
+}
+
+/* ---------- PAYMENTS ---------- */
+function openPaymentForm(jobId) {
+  if (!isOwner()) return;
+  const j = JOBS.find(x => x.id === jobId);
+  const today = new Date().toISOString().slice(0,10);
+  const suggest = balance(j) > 0 ? balance(j) : '';
+  modal(`
+    <div class="flex items-start justify-between gap-3 mb-4">
+      <div>
+        <div class="text-2xl font-extrabold">${t('add_payment')}</div>
+        <div class="text-sm text-slate-500">${escapeHtml(j.name)}</div>
+      </div>
+      <button onclick="openJobDetail('${jobId}')" class="w-10 h-10 rounded-full bg-slate-100 hover:bg-slate-200 grid place-items-center text-xl font-bold">×</button>
+    </div>
+    <form id="pay-form" onsubmit="event.preventDefault(); savePayment('${jobId}');" class="space-y-3">
+      <div>
+        <label class="block text-xs font-bold text-slate-600 uppercase mb-1">${t('payment_amount')} *</label>
+        <input name="amount" type="number" step="0.01" min="0" required value="${suggest}"
+          class="w-full px-4 py-4 rounded-xl border-2 border-slate-200 focus:border-brand-400 focus:outline-none text-2xl font-bold" />
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-bold text-slate-600 uppercase mb-1">${t('payment_date')}</label>
+          <input name="date" type="date" value="${today}" class="w-full px-4 py-3 rounded-xl border-2 border-slate-200 focus:border-brand-400 focus:outline-none text-base" />
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-600 uppercase mb-1">${t('payment_method')}</label>
+          <select name="method" class="w-full px-4 py-3 rounded-xl border-2 border-slate-200 focus:border-brand-400 focus:outline-none text-base bg-white">
+            <option value="cash">${t('method_cash')}</option>
+            <option value="check">${t('method_check')}</option>
+            <option value="card">${t('method_card')}</option>
+            <option value="zelle">${t('method_zelle')}</option>
+            <option value="other">${t('method_other')}</option>
+          </select>
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs font-bold text-slate-600 uppercase mb-1">${t('payment_note')}</label>
+        <input name="note" type="text" class="w-full px-4 py-3 rounded-xl border-2 border-slate-200 focus:border-brand-400 focus:outline-none text-base" />
+      </div>
+      <div class="grid grid-cols-2 gap-2 pt-2">
+        <button type="button" onclick="openJobDetail('${jobId}')" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 rounded-xl">${t('cancel')}</button>
+        <button type="submit" class="bg-green-500 hover:bg-green-600 text-white font-extrabold py-3 rounded-xl">${t('save')}</button>
+      </div>
+    </form>
+  `);
+  setTimeout(() => document.querySelector('#pay-form [name="amount"]')?.focus(), 50);
+}
+async function savePayment(jobId) {
+  const f = document.getElementById('pay-form');
+  const data = Object.fromEntries(new FormData(f).entries());
+  const amount = Number(data.amount);
+  if (!amount || amount <= 0) return;
+  const j = JOBS.find(x => x.id === jobId);
+  j.payments = j.payments || [];
+  j.payments.push({ id:id(), amount, date:data.date, method:data.method, note:data.note });
+  if (totalPaid(j) >= Number(j.price||0) && Number(j.price||0) > 0) {
+    if (j.stage === 'done') j.stage = 'paid';
+  }
+  lsSet(KEY_JOBS, JOBS);
+  await sbUpsertJob(j);
+  logActivity('payment', jobId, { amount, method:data.method });
+  toast(t('saved'));
+  openJobDetail(jobId);
+}
+async function deletePayment(jobId, payId) {
+  if (!isOwner()) return;
+  if (!confirm(t('delete_payment_confirm'))) return;
+  const j = JOBS.find(x => x.id === jobId);
+  const p = (j.payments||[]).find(x => x.id === payId);
+  j.payments = (j.payments||[]).filter(p => p.id !== payId);
+  lsSet(KEY_JOBS, JOBS);
+  await sbUpsertJob(j);
+  logActivity('payment_del', jobId, { amount: p?.amount });
+  openJobDetail(jobId);
+}
+
+/* ---------- MONEY VIEW ---------- */
+function renderMoney() {
+  const moneyJobs = JOBS.filter(j => Number(j.price||0) > 0);
+  const billed   = moneyJobs.reduce((s,j)=> s + Number(j.price||0), 0);
+  const collected= moneyJobs.reduce((s,j)=> s + totalPaid(j), 0);
+  const owed     = moneyJobs.reduce((s,j)=> s + balance(j), 0);
+
+  let list = moneyJobs.slice();
+  if (moneySort === 'owed') {
+    list = list.filter(j => balance(j) > 0).sort((a,b)=> balance(b) - balance(a));
+  } else {
+    list.sort((a,b)=> balance(b) - balance(a));
+  }
+
+  return `
+    <h2 class="text-lg font-extrabold text-slate-800 mb-3 px-1">${t('money_summary')}</h2>
+    <div class="grid grid-cols-3 gap-2 mb-5">
+      <div class="bg-white border-2 border-slate-200 rounded-2xl p-3 text-center">
+        <div class="text-[10px] font-bold text-slate-500 uppercase">${t('total_billed')}</div>
+        <div class="text-xl font-extrabold text-slate-900 mt-1">${fmtMoney(billed)}</div>
+      </div>
+      <div class="bg-white border-2 border-green-200 rounded-2xl p-3 text-center">
+        <div class="text-[10px] font-bold text-green-700 uppercase">${t('total_collected')}</div>
+        <div class="text-xl font-extrabold text-green-700 mt-1">${fmtMoney(collected)}</div>
+      </div>
+      <div class="bg-white border-2 border-amber-200 rounded-2xl p-3 text-center">
+        <div class="text-[10px] font-bold text-amber-700 uppercase">${t('total_owed')}</div>
+        <div class="text-xl font-extrabold text-amber-700 mt-1">${fmtMoney(owed)}</div>
+      </div>
+    </div>
+
+    <div class="flex gap-2 mb-4">
+      <button onclick="moneySort='owed'; render();" class="flex-1 px-4 py-2.5 rounded-full font-bold text-sm transition ${moneySort==='owed' ? 'bg-slate-900 text-white' : 'bg-white border-2 border-slate-200 text-slate-700'}">
+        ${t('sort_owed')}
+      </button>
+      <button onclick="moneySort='all'; render();" class="flex-1 px-4 py-2.5 rounded-full font-bold text-sm transition ${moneySort==='all' ? 'bg-slate-900 text-white' : 'bg-white border-2 border-slate-200 text-slate-700'}">
+        ${t('all_jobs')}
+      </button>
+    </div>
+
+    ${list.length === 0
+      ? `<div class="text-center text-slate-500 py-12">${moneySort==='owed' ? t('fully_paid') : t('no_jobs')}</div>`
+      : list.map(j => moneyCard(j)).join('')}
+  `;
+}
+function moneyCard(j) {
+  const status = payStatus(j);
+  const bal = balance(j);
+  const paid = totalPaid(j);
+  const total = Number(j.price||0);
+  const pct = total > 0 ? Math.min(100, Math.round((paid/total)*100)) : 0;
+  return `
+    <div onclick="openJobDetail('${j.id}')" class="bg-white border-2 border-slate-200 rounded-2xl p-4 mb-3 cursor-pointer hover:shadow-md transition">
+      <div class="flex items-start justify-between gap-3 mb-2">
+        <div class="flex-1 min-w-0">
+          <div class="font-bold truncate">${escapeHtml(j.name)}</div>
+          <div class="text-sm text-slate-600 truncate">${escapeHtml(j.customer||'')}</div>
+        </div>
+        <span class="pay-${status} text-xs font-bold px-2.5 py-1 rounded-full whitespace-nowrap">${payStatusLabel(status)}</span>
+      </div>
+      <div class="flex justify-between text-sm mb-1.5">
+        <span class="text-slate-600">${fmtMoney(paid)} / ${fmtMoney(total)}</span>
+        <span class="font-extrabold ${bal>0?'text-amber-700':'text-green-700'}">${bal>0 ? fmtMoney(bal)+' '+t('balance').toLowerCase() : t('pay_paid')}</span>
+      </div>
+      <div class="h-2 bg-slate-100 rounded-full overflow-hidden">
+        <div class="h-full ${status==='paid'?'bg-green-500':status==='partial'?'bg-amber-400':'bg-red-300'}" style="width:${pct}%"></div>
+      </div>
+    </div>`;
+}
+
+/* ---------- ACTIVITY VIEW ---------- */
+function renderActivity() {
+  let list = ACTIVITY.slice();
+  if (activityFilter !== 'all') list = list.filter(a => (a.userId || a.user_id) === activityFilter);
+
+  const groups = {};
+  list.forEach(a => {
+    const ts = Number(a.at);
+    const day = new Date(ts).toLocaleDateString(undefined, { weekday:'long', month:'short', day:'numeric' });
+    (groups[day] = groups[day] || []).push(a);
+  });
+
+  const workerOptions = [
+    { id:'all', name:t('all_workers'), color:'#64748B' },
+    { id:'owner', name:t('owner_label'), color:'#0F172A' },
+    ...WORKERS,
+  ];
+
+  return `
+    <h2 class="text-lg font-extrabold text-slate-800 mb-3 px-1">${t('recent_activity')}</h2>
+    <div class="flex gap-2 mb-4 overflow-x-auto scroll-x pb-1">
+      ${workerOptions.map(w => `
+        <button onclick="activityFilter='${w.id}'; render();"
+          class="px-3 py-2 rounded-full font-bold text-sm whitespace-nowrap transition flex items-center gap-2 ${activityFilter===w.id ? 'bg-slate-900 text-white' : 'bg-white border-2 border-slate-200 text-slate-700'}">
+          ${w.id !== 'all' ? userAvatar(w, 22) : ''}
+          ${escapeHtml(w.name)}
+        </button>`).join('')}
+    </div>
+    ${list.length === 0
+      ? `<div class="text-center text-slate-500 py-12">${t('no_activity')}</div>`
+      : Object.entries(groups).map(([day, items]) => `
+          <div class="mb-5">
+            <div class="text-xs font-bold text-slate-500 uppercase mb-2 px-1">${day}</div>
+            ${items.map(a => activityRow(a, true)).join('')}
+          </div>`).join('')}
+  `;
+}
+
+function activityRow(a, showJob) {
+  const uid = a.userId || a.user_id;
+  const urole = a.userRole || a.user_role;
+  const u = urole === 'owner'
+    ? { id:'owner', name:t('owner_label'), color:'#0F172A' }
+    : findWorker(uid);
+  const jobId = a.jobId || a.job_id;
+  const job = JOBS.find(j => j.id === jobId);
+  const jobName = job ? job.name : a.data?.name || '—';
+  const cls = activityIcon(a.type);
+  return `
+    <div class="activity-item ${cls} flex items-start gap-3 ${showJob ? 'cursor-pointer' : ''}"
+         ${showJob && job ? `onclick="openJobDetail('${jobId}')"` : ''}>
+      ${userAvatar(u, 28)}
+      <div class="flex-1 min-w-0">
+        <div class="text-sm">
+          <span class="font-bold">${escapeHtml(u.name)}</span>
+          <span class="text-slate-600">${activityText(a)}</span>
+        </div>
+        ${showJob ? `<div class="text-xs text-slate-500 truncate">${escapeHtml(jobName)}</div>` : ''}
+      </div>
+      <div class="text-xs text-slate-400 whitespace-nowrap">${relativeTime(Number(a.at))}</div>
+    </div>`;
+}
+
+/* ---------- MESSAGES ---------- */
+function renderMessages() {
+  if (!activeJobId || !JOBS.find(j => j.id === activeJobId)) {
+    return `
+      <h2 class="text-lg font-extrabold text-slate-800 mb-3">${t('messages')}</h2>
+      <div class="text-sm text-slate-500 mb-4">${t('select_job')}</div>
+      ${JOBS.map(j => `
+        <button onclick="openJobMessages('${j.id}')" class="w-full bg-white border-2 border-slate-200 hover:border-brand-300 rounded-2xl p-4 mb-2 text-left transition flex items-center justify-between gap-3">
+          <div class="flex-1 min-w-0">
+            <div class="font-bold truncate">${escapeHtml(j.name)}</div>
+            <div class="text-xs text-slate-500 truncate">${escapeHtml(j.customer||'')}</div>
+          </div>
+          ${(MSGS[j.id]||[]).length ? `<span class="bg-brand-500 text-white text-xs font-bold rounded-full px-2 py-0.5">${MSGS[j.id].length}</span>` : ''}
+        </button>`).join('')}
+    `;
+  }
+  const j = JOBS.find(x => x.id === activeJobId);
+  const msgs = (MSGS[activeJobId] || []).slice().sort((a,b) => a.at - b.at);
+  return `
+    <button onclick="activeJobId=null; render();" class="text-sm font-bold text-slate-600 mb-3 flex items-center gap-1">
+      ← ${t('messages')}
+    </button>
+    <div class="bg-white border-2 border-slate-200 rounded-2xl p-3 mb-3">
+      <div class="font-bold">${escapeHtml(j.name)}</div>
+      <div class="text-xs text-slate-500">${escapeHtml(j.customer||'')}</div>
+    </div>
+    <div class="space-y-2 mb-3 min-h-[200px]">
+      ${msgs.length === 0
+        ? `<div class="text-center text-slate-400 py-8 text-sm">${t('no_messages')}</div>`
+        : msgs.map(m => {
+            const u = m.userId === 'owner'
+              ? { id:'owner', name:t('owner_label'), color:'#0F172A' }
+              : findWorker(m.userId || '');
+            return `
+              <div class="flex gap-2 items-start">
+                ${userAvatar(u, 32)}
+                <div class="flex-1 min-w-0 bg-white border border-slate-200 rounded-2xl p-3">
+                  <div class="flex items-baseline justify-between gap-2 mb-1">
+                    <div class="font-bold text-xs" style="color:${u.color}">${escapeHtml(u.name || m.userName || '?')}</div>
+                    <div class="text-xs text-slate-400">${new Date(Number(m.at)).toLocaleString()}</div>
+                  </div>
+                  <div class="text-sm">${escapeHtml(m.text)}</div>
+                </div>
+              </div>`;
+          }).join('')}
+    </div>
+    <form onsubmit="event.preventDefault(); sendMessage();" class="flex gap-2 sticky bottom-24 bg-slate-50 py-2">
+      <input id="msg-input" type="text" placeholder="${t('type_message')}"
+        class="flex-1 px-4 py-3 rounded-xl border-2 border-slate-200 focus:border-brand-400 focus:outline-none text-base" />
+      <button type="submit" class="bg-brand-500 hover:bg-brand-600 text-white font-bold px-5 rounded-xl">${t('send')}</button>
+    </form>
+  `;
+}
+function openJobMessages(jobId) { activeJobId = jobId; route='messages'; render(); }
+async function sendMessage() {
+  const input = document.getElementById('msg-input');
+  const text = input.value.trim(); if (!text) return;
+  const msg = { text, at: Date.now(), userId: user.id, userName: user.name };
+  MSGS[activeJobId] = MSGS[activeJobId] || [];
+  MSGS[activeJobId].push(msg);
+  lsSet(KEY_MSGS, MSGS);
+  input.value = '';
+  await sbInsertMessage(activeJobId, msg);
+  logActivity('message', activeJobId);
+  render();
+}
+
+/* ---------- PHOTOS ---------- */
+function addPhoto(jobId, input) {
+  const file = input.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const img = new Image();
+    img.onload = async () => {
+      const max = 1200;
+      const scale = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement('canvas');
+      c.width = img.width * scale; c.height = img.height * scale;
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      const data = c.toDataURL('image/jpeg', 0.72);
+      const j = JOBS.find(x => x.id === jobId);
+      j.photos = j.photos || [];
+      j.photos.push({ data, by: user.id, at: Date.now() });
+      lsSet(KEY_JOBS, JOBS);
+      await sbUpsertJob(j);
+      logActivity('photo', jobId);
+      toast(t('added'));
+      openJobDetail(jobId);
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+async function deletePhoto(jobId, idx) {
+  const j = JOBS.find(x => x.id === jobId);
+  j.photos.splice(idx,1);
+  lsSet(KEY_JOBS, JOBS);
+  await sbUpsertJob(j);
+  logActivity('photo_del', jobId);
+  openJobDetail(jobId);
+}
+
+/* ============================================================
+   SETTINGS
+   ============================================================ */
+function openSettings() {
+  if (!isOwner()) return;
+  modal(`
+    <div class="flex items-start justify-between gap-3 mb-4">
+      <div class="text-2xl font-extrabold">${t('settings')}</div>
+      <button onclick="closeModal()" class="w-10 h-10 rounded-full bg-slate-100 hover:bg-slate-200 grid place-items-center text-xl font-bold">×</button>
+    </div>
+
+    <div class="mb-6">
+      <div class="flex items-center justify-between mb-3">
+        <div class="text-xs font-bold text-slate-500 uppercase">${t('workers')}</div>
+      </div>
+      <div class="space-y-2 mb-3">
+        ${WORKERS.map(w => `
+          <div class="flex items-center gap-3 bg-white border border-slate-200 rounded-xl p-3">
+            ${userAvatar(w, 36)}
+            <div class="flex-1 min-w-0">
+              <div class="font-bold truncate">${escapeHtml(w.name)}</div>
+              <div class="text-xs text-slate-500">PIN: ${escapeHtml(w.pin)}</div>
+            </div>
+            <button onclick="openWorkerForm('${w.id}')" class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-sm font-bold" style="min-height:auto">✎</button>
+            <button onclick="deleteWorker('${w.id}')" class="px-3 py-2 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 text-sm font-bold" style="min-height:auto">×</button>
+          </div>`).join('')}
+      </div>
+      <button onclick="openWorkerForm()" class="w-full bg-brand-500 hover:bg-brand-600 text-white font-bold py-3 rounded-xl">
+        ${t('add_worker')}
+      </button>
+    </div>
+
+    <div class="border-t border-slate-200 pt-4">
+      <div class="text-xs font-bold text-slate-500 uppercase mb-2">${t('owner_pin')}</div>
+      <button onclick="openOwnerPinForm()" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold py-3 rounded-xl">
+        ${t('change_owner_pin')}
+      </button>
+    </div>
+  `);
+}
+
+function openWorkerForm(workerId) {
+  const editing = workerId ? WORKERS.find(w => w.id === workerId) : null;
+  const w = editing || { name:'', pin:'', color: DEFAULT_COLORS[WORKERS.length % DEFAULT_COLORS.length] };
+  modal(`
+    <div class="flex items-start justify-between gap-3 mb-4">
+      <div class="text-2xl font-extrabold">${editing ? t('edit_worker') : t('new_worker')}</div>
+      <button onclick="openSettings()" class="w-10 h-10 rounded-full bg-slate-100 hover:bg-slate-200 grid place-items-center text-xl font-bold">×</button>
+    </div>
+    <form id="worker-form" onsubmit="event.preventDefault(); saveWorker(${editing ? `'${editing.id}'` : 'null'});" class="space-y-3">
+      <div>
+        <label class="block text-xs font-bold text-slate-600 uppercase mb-1">${t('worker_name')} *</label>
+        <input name="name" type="text" value="${escapeHtml(w.name)}" required
+          class="w-full px-4 py-3 rounded-xl border-2 border-slate-200 focus:border-brand-400 focus:outline-none text-base" />
+      </div>
+      <div>
+        <label class="block text-xs font-bold text-slate-600 uppercase mb-1">${t('worker_pin')} *</label>
+        <input name="pin" type="text" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" value="${escapeHtml(w.pin)}" required
+          class="w-full px-4 py-3 rounded-xl border-2 border-slate-200 focus:border-brand-400 focus:outline-none text-base font-mono tracking-widest" />
+      </div>
+      <div>
+        <label class="block text-xs font-bold text-slate-600 uppercase mb-2">${t('worker_color')}</label>
+        <div class="flex flex-wrap gap-2">
+          ${DEFAULT_COLORS.map(c => `
+            <label class="cursor-pointer">
+              <input type="radio" name="color" value="${c}" ${c===w.color?'checked':''} class="sr-only peer" />
+              <div class="w-10 h-10 rounded-full peer-checked:ring-4 peer-checked:ring-offset-2 peer-checked:ring-slate-400" style="background:${c}"></div>
+            </label>`).join('')}
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-2 pt-2">
+        <button type="button" onclick="openSettings()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 rounded-xl">${t('cancel')}</button>
+        <button type="submit" class="bg-brand-500 hover:bg-brand-600 text-white font-extrabold py-3 rounded-xl">${t('save')}</button>
+      </div>
+    </form>
+  `);
+}
+
+async function saveWorker(workerId) {
+  const f = document.getElementById('worker-form');
+  const data = Object.fromEntries(new FormData(f).entries());
+  if (!data.name.trim()) { toast(t('name_required'), true); return; }
+  if (!/^\d{4}$/.test(data.pin)) { toast(t('pin_invalid'), true); return; }
+  if (data.pin === getOwnerPin()) { toast(t('pin_duplicate'), true); return; }
+  if (WORKERS.some(w => w.pin === data.pin && w.id !== workerId)) { toast(t('pin_duplicate'), true); return; }
+
+  let w;
+  if (workerId) {
+    w = WORKERS.find(x => x.id === workerId);
+    Object.assign(w, data);
+  } else {
+    w = { id:id(), name:data.name, pin:data.pin, color:data.color };
+    WORKERS.push(w);
+  }
+  lsSet(KEY_WORKERS, WORKERS);
+  await sbUpsertWorker(w);
+  toast(t('saved'));
+  openSettings();
+}
+
+async function deleteWorker(workerId) {
+  if (!confirm(t('delete_worker_confirm'))) return;
+  WORKERS = WORKERS.filter(w => w.id !== workerId);
+  lsSet(KEY_WORKERS, WORKERS);
+  await sbDeleteWorker(workerId);
+  toast(t('deleted'));
+  openSettings();
+}
+
+function openOwnerPinForm() {
+  modal(`
+    <div class="flex items-start justify-between gap-3 mb-4">
+      <div class="text-2xl font-extrabold">${t('change_owner_pin')}</div>
+      <button onclick="openSettings()" class="w-10 h-10 rounded-full bg-slate-100 hover:bg-slate-200 grid place-items-center text-xl font-bold">×</button>
+    </div>
+    <form id="owner-pin-form" onsubmit="event.preventDefault(); saveOwnerPin();" class="space-y-3">
+      <div>
+        <label class="block text-xs font-bold text-slate-600 uppercase mb-1">${t('owner_pin')} *</label>
+        <input name="pin" type="text" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" value="${getOwnerPin()}" required
+          class="w-full px-4 py-3 rounded-xl border-2 border-slate-200 focus:border-brand-400 focus:outline-none text-base font-mono tracking-widest" />
+      </div>
+      <div class="grid grid-cols-2 gap-2 pt-2">
+        <button type="button" onclick="openSettings()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 rounded-xl">${t('cancel')}</button>
+        <button type="submit" class="bg-brand-500 hover:bg-brand-600 text-white font-extrabold py-3 rounded-xl">${t('save')}</button>
+      </div>
+    </form>
+  `);
+}
+
+async function saveOwnerPin() {
+  const f = document.getElementById('owner-pin-form');
+  const data = Object.fromEntries(new FormData(f).entries());
+  if (!/^\d{4}$/.test(data.pin)) { toast(t('pin_invalid'), true); return; }
+  if (WORKERS.some(w => w.pin === data.pin)) { toast(t('pin_duplicate'), true); return; }
+  SETTINGS.owner_pin = data.pin;
+  lsSet(KEY_SETTINGS, SETTINGS);
+  await sbSetOwnerPin(data.pin);
+  toast(t('saved'));
+  openSettings();
+}
+
+/* ---------- MODAL ---------- */
+function modal(html) {
+  document.getElementById('modal-root').innerHTML =
+    `<div class="modal-backdrop" onclick="if(event.target===this) closeModal()">
+       <div class="modal-card">${html}</div>
+     </div>`;
+}
+function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
+
+/* ============================================================
+   PWA INSTALL
+   ============================================================ */
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  installDeferred = e;
+  maybeShowInstallBanner();
+});
+
+function maybeShowInstallBanner() {
+  // Don't show if already dismissed or installed
+  if (localStorage.getItem('akats_install_dismissed')) return;
+  if (window.matchMedia('(display-mode: standalone)').matches) return;
+
+  const banner = document.getElementById('install-banner');
+  if (installDeferred) {
+    banner.innerHTML = `
+      <div class="install-banner">
+        <div class="w-10 h-10 rounded-lg bg-brand-500 grid place-items-center text-white font-black text-xl flex-shrink-0">A</div>
+        <div class="flex-1 min-w-0">
+          <div class="font-bold text-sm">${t('install_prompt')}</div>
+        </div>
+        <button onclick="dismissInstall()" class="px-3 py-2 text-slate-500 text-sm font-bold" style="min-height:auto">${t('install_later')}</button>
+        <button onclick="triggerInstall()" class="bg-brand-500 text-white font-bold px-4 py-2 rounded-lg text-sm" style="min-height:auto">${t('install_btn')}</button>
+      </div>`;
+  } else {
+    // iOS has no beforeinstallprompt — show instructions once
+    const ua = navigator.userAgent;
+    const isIos = /iPhone|iPad|iPod/i.test(ua) && !/CriOS|FxiOS/i.test(ua);
+    if (isIos) {
+      banner.innerHTML = `
+        <div class="install-banner">
+          <div class="w-10 h-10 rounded-lg bg-brand-500 grid place-items-center text-white font-black text-xl flex-shrink-0">A</div>
+          <div class="flex-1 min-w-0 text-xs">
+            <div class="font-bold">${t('install_prompt')}</div>
+            <div class="text-slate-600">${t('install_ios')}</div>
+          </div>
+          <button onclick="dismissInstall()" class="px-3 py-2 text-slate-500 text-sm font-bold" style="min-height:auto">×</button>
+        </div>`;
+    }
+  }
+}
+
+async function triggerInstall() {
+  if (!installDeferred) return;
+  installDeferred.prompt();
+  await installDeferred.userChoice;
+  installDeferred = null;
+  dismissInstall();
+}
+function dismissInstall() {
+  localStorage.setItem('akats_install_dismissed', '1');
+  document.getElementById('install-banner').innerHTML = '';
+}
+
+/* ---------- BOOT ---------- */
+document.getElementById('lang-toggle').addEventListener('click', () => {
+  lang = lang === 'en' ? 'es' : 'en';
+  localStorage.setItem('akats_lang', lang);
+  if (user) bootApp(); else renderLock();
+});
+document.getElementById('logout-btn').addEventListener('click', () => {
+  toast(t('signed_out'));
+  setTimeout(logout, 200);
+});
+document.getElementById('settings-btn').addEventListener('click', openSettings);
+
+// Online/offline tracking
+window.addEventListener('online',  () => { if (sb) sbFetchAll(); });
+window.addEventListener('offline', () => setSyncState('offline'));
+
+// Service worker
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {/* ok */});
+  });
+}
+
+// Initial boot
+if (user) bootApp(); else renderLock();
+
+if (CONFIGURED) {
+  sbFetchAll().then(() => startRealtime());
+} else {
+  setSyncState('error');
+}
+</script>
+</body>
+</html>
