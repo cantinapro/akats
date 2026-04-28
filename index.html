@@ -219,8 +219,8 @@
      ============================================================ -->
 <script>
 window.AKATS_CONFIG = {
-  SUPABASE_URL:  "https://cjxnblliucvpndvrpirg.supabase.co",
-  SUPABASE_ANON: "sb_publishable_-u5OuM4sMspDY0T4bHghqQ_0DcUPaZj",
+  SUPABASE_URL:  "PASTE_YOUR_SUPABASE_URL_HERE",
+  SUPABASE_ANON: "PASTE_YOUR_ANON_KEY_HERE",
   TENANT:        "akats",   // leave alone unless you know why to change it
 };
 </script>
@@ -256,6 +256,13 @@ const I18N = {
     due_in:"Due in", days:"days",
     no_jobs:"No jobs yet. Tap +New Job to start.",
     saved:"Saved", deleted:"Deleted", added:"Added",
+    confirm_done_title:"Mark as Done?",
+    confirm_done_msg:"Are you sure this job is finished?",
+    confirm_paid_title:"Mark as Paid?",
+    confirm_paid_msg:"Are you sure this job is fully paid?",
+    confirm_delete_title:"Delete this job?",
+    confirm_delete_msg:"This will permanently remove the job and its messages. Photos will stay in storage.",
+    confirm_yes:"Yes", confirm_no:"No",
     customer:"Customer", address:"Address", phone:"Phone",
     price:"Price", due:"Due", notes:"Notes",
     call:"Call", directions:"Directions",
@@ -333,6 +340,13 @@ const I18N = {
     due_in:"En", days:"días",
     no_jobs:"Sin trabajos. Toca +Nuevo Trabajo.",
     saved:"Guardado", deleted:"Borrado", added:"Agregado",
+    confirm_done_title:"¿Marcar como Terminado?",
+    confirm_done_msg:"¿Seguro que este trabajo está terminado?",
+    confirm_paid_title:"¿Marcar como Pagado?",
+    confirm_paid_msg:"¿Seguro que este trabajo está totalmente pagado?",
+    confirm_delete_title:"¿Borrar este trabajo?",
+    confirm_delete_msg:"Esto eliminará el trabajo y sus mensajes para siempre. Las fotos seguirán en el almacenamiento.",
+    confirm_yes:"Sí", confirm_no:"No",
     customer:"Cliente", address:"Dirección", phone:"Teléfono",
     price:"Precio", due:"Fecha", notes:"Notas",
     call:"Llamar", directions:"Cómo llegar",
@@ -1174,6 +1188,21 @@ function row(label, val) {
 async function setStage(jobId, stage) {
   const j = JOBS.find(x => x.id === jobId); if (!j) return;
   if (j.stage === stage) { closeModal(); return; }
+  // Confirm for milestone stages
+  if (stage === 'done' || stage === 'paid') {
+    const titleKey = stage === 'done' ? 'confirm_done_title' : 'confirm_paid_title';
+    const msgKey   = stage === 'done' ? 'confirm_done_msg'   : 'confirm_paid_msg';
+    confirmDialog({
+      title:   t(titleKey),
+      message: `${j.name}${j.customer ? ' — ' + j.customer : ''}`,
+      onConfirm: () => doSetStage(jobId, stage),
+    });
+    return;
+  }
+  doSetStage(jobId, stage);
+}
+async function doSetStage(jobId, stage) {
+  const j = JOBS.find(x => x.id === jobId); if (!j) return;
   j.stage = stage;
   lsSet(KEY_JOBS, JOBS);
   await sbUpsertJob(j);
@@ -1181,14 +1210,21 @@ async function setStage(jobId, stage) {
   toast(t('saved')); closeModal(); render();
 }
 async function deleteJob(jobId) {
-  if (!confirm(t('delete_confirm'))) return;
-  const j = JOBS.find(x => x.id === jobId);
-  logActivity('deleted', jobId, { name: j?.name });
-  JOBS = JOBS.filter(j => j.id !== jobId);
-  lsSet(KEY_JOBS, JOBS);
-  await sbDeleteJob(jobId);
-  delete MSGS[jobId]; lsSet(KEY_MSGS, MSGS);
-  toast(t('deleted')); closeModal(); render();
+  const j = JOBS.find(x => x.id === jobId); if (!j) return;
+  confirmDialog({
+    title:   t('confirm_delete_title'),
+    message: `${j.name}${j.customer ? ' — ' + j.customer : ''}`,
+    confirmLabel: t('delete'),
+    danger: true,
+    onConfirm: async () => {
+      logActivity('deleted', jobId, { name: j?.name });
+      JOBS = JOBS.filter(x => x.id !== jobId);
+      lsSet(KEY_JOBS, JOBS);
+      await sbDeleteJob(jobId);
+      delete MSGS[jobId]; lsSet(KEY_MSGS, MSGS);
+      toast(t('deleted')); closeModal(); render();
+    }
+  });
 }
 
 /* ---------- JOB FORM ---------- */
@@ -1703,6 +1739,28 @@ async function saveOwnerPin() {
   await sbSetOwnerPin(data.pin);
   toast(t('saved'));
   openSettings();
+}
+
+/* ---------- CONFIRM POPUP ---------- */
+function confirmDialog({ title, message, confirmLabel, cancelLabel, danger, onConfirm }) {
+  const root = document.getElementById('modal-root');
+  // Stack on top of any existing modal
+  const wrapper = document.createElement('div');
+  wrapper.className = 'modal-backdrop';
+  wrapper.style.zIndex = 70;
+  wrapper.onclick = (e) => { if (e.target === wrapper) wrapper.remove(); };
+  wrapper.innerHTML = `
+    <div class="modal-card" style="max-width:420px">
+      <div class="text-2xl font-extrabold mb-2">${escapeHtml(title)}</div>
+      <div class="text-slate-600 mb-5">${escapeHtml(message)}</div>
+      <div class="grid grid-cols-2 gap-2">
+        <button class="cancel-btn bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 rounded-xl">${escapeHtml(cancelLabel || t('confirm_no'))}</button>
+        <button class="confirm-btn ${danger ? 'bg-red-500 hover:bg-red-600' : 'bg-brand-500 hover:bg-brand-600'} text-white font-extrabold py-3 rounded-xl">${escapeHtml(confirmLabel || t('confirm_yes'))}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(wrapper);
+  wrapper.querySelector('.cancel-btn').onclick = () => wrapper.remove();
+  wrapper.querySelector('.confirm-btn').onclick = () => { wrapper.remove(); onConfirm(); };
 }
 
 /* ---------- MODAL ---------- */
