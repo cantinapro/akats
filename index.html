@@ -227,10 +227,10 @@ window.AKATS_CONFIG = {
 
 <script>
 /* ============================================================
-   A-Kats — Live (Supabase) v4
+   A-Kats — Live (Supabase) v5 — multi-owner support
    ============================================================ */
 
-/* ---------- i18n (same as v3) ---------- */
+/* ---------- i18n ---------- */
 const I18N = {
   en: {
     nav_home:"Home", nav_jobs:"Jobs", nav_messages:"Messages", nav_money:"Money", nav_activity:"Activity",
@@ -294,14 +294,18 @@ const I18N = {
     act_payment_del:"removed a payment",
     act_message:"sent a message",
     act_deleted:"deleted job",
-    filter_worker:"Filter by worker", all_workers:"All workers",
-    settings:"Settings", workers:"Workers",
-    add_worker:"+ Add worker",
+    filter_worker:"Filter by user", all_workers:"Everyone",
+    settings:"Settings", workers:"Workers", owners:"Owners",
+    add_worker:"+ Add worker", add_owner:"+ Add owner",
     worker_name:"Name", worker_pin:"PIN (4 digits)",
     worker_color:"Color",
     edit_worker:"Edit worker", new_worker:"New worker",
+    edit_owner:"Edit owner", new_owner:"New owner",
     delete_worker_confirm:"Remove this worker?",
-    owner_pin:"Owner PIN", change_owner_pin:"Change owner PIN",
+    delete_owner_confirm:"Remove this owner?",
+    cant_remove_last_owner:"Can't remove the last owner",
+    master_pin:"Master PIN", change_master_pin:"Change master PIN",
+    master_pin_help:"Backup PIN that logs in as generic Owner",
     pin_duplicate:"That PIN is already in use",
     pin_invalid:"PIN must be 4 digits",
     name_required:"Name is required",
@@ -378,14 +382,18 @@ const I18N = {
     act_payment_del:"quitó un pago",
     act_message:"envió un mensaje",
     act_deleted:"borró trabajo",
-    filter_worker:"Filtrar por trabajador", all_workers:"Todos",
-    settings:"Configuración", workers:"Trabajadores",
-    add_worker:"+ Agregar trabajador",
+    filter_worker:"Filtrar por usuario", all_workers:"Todos",
+    settings:"Configuración", workers:"Trabajadores", owners:"Dueños",
+    add_worker:"+ Agregar trabajador", add_owner:"+ Agregar dueño",
     worker_name:"Nombre", worker_pin:"PIN (4 dígitos)",
     worker_color:"Color",
     edit_worker:"Editar trabajador", new_worker:"Nuevo trabajador",
+    edit_owner:"Editar dueño", new_owner:"Nuevo dueño",
     delete_worker_confirm:"¿Quitar este trabajador?",
-    owner_pin:"PIN del dueño", change_owner_pin:"Cambiar PIN del dueño",
+    delete_owner_confirm:"¿Quitar este dueño?",
+    cant_remove_last_owner:"No se puede quitar el último dueño",
+    master_pin:"PIN maestro", change_master_pin:"Cambiar PIN maestro",
+    master_pin_help:"PIN de respaldo que entra como Dueño genérico",
     pin_duplicate:"Ese PIN ya está en uso",
     pin_invalid:"El PIN debe tener 4 dígitos",
     name_required:"El nombre es requerido",
@@ -420,7 +428,7 @@ if (CONFIGURED) {
 }
 const TENANT = CFG.TENANT || 'akats';
 
-let syncState = 'connecting';  // 'online' | 'offline' | 'connecting' | 'error'
+let syncState = 'connecting';
 function setSyncState(s) {
   syncState = s;
   const el = document.getElementById('sync-dot');
@@ -429,11 +437,12 @@ function setSyncState(s) {
   el.title = t(s) || s;
 }
 
-/* ---------- Local cache (so offline still works) ---------- */
+/* ---------- Local cache ---------- */
 const KEY_JOBS    = 'akats_jobs_v4';
 const KEY_MSGS    = 'akats_msgs_v4';
 const KEY_USER    = 'akats_user_v4';
 const KEY_WORKERS = 'akats_workers_v4';
+const KEY_OWNERS  = 'akats_owners_v5';
 const KEY_ACTIVITY = 'akats_activity_v4';
 const KEY_SETTINGS = 'akats_settings_v4';
 
@@ -445,8 +454,9 @@ const DEFAULT_COLORS = ['#F97316','#3B82F6','#10B981','#8B5CF6','#EC4899','#14B8
 
 /* ---------- State ---------- */
 let JOBS     = lsGet(KEY_JOBS, []);
-let MSGS     = lsGet(KEY_MSGS, {});  // { jobId: [msgs] }
+let MSGS     = lsGet(KEY_MSGS, {});
 let WORKERS  = lsGet(KEY_WORKERS, []);
+let OWNERS   = lsGet(KEY_OWNERS, []);
 let ACTIVITY = lsGet(KEY_ACTIVITY, []);
 let SETTINGS = lsGet(KEY_SETTINGS, { owner_pin: '9999' });
 let user     = lsGet(KEY_USER, null);
@@ -471,19 +481,23 @@ async function sbFetchAll() {
   if (!sb) return;
   try {
     setSyncState('connecting');
-    const [jobsRes, msgsRes, workersRes, actRes, setRes] = await Promise.all([
+    const [jobsRes, msgsRes, workersRes, ownersRes, actRes, setRes] = await Promise.all([
       sb.from('jobs').select('*').eq('tenant', TENANT).eq('deleted', false).order('updated_at', { ascending: false }),
       sb.from('messages').select('*').eq('tenant', TENANT).order('at', { ascending: true }),
       sb.from('workers').select('*').eq('tenant', TENANT).order('name'),
+      sb.from('owners').select('*').eq('tenant', TENANT).order('name'),
       sb.from('activity').select('*').eq('tenant', TENANT).order('at', { ascending: false }).limit(500),
       sb.from('settings').select('*').eq('tenant', TENANT).maybeSingle(),
     ]);
 
     if (jobsRes.error) throw jobsRes.error;
     if (workersRes.error) throw workersRes.error;
-    // Messages / activity errors are non-fatal
+    // Owners errors are non-fatal (table might not exist yet on first run)
+    if (ownersRes.error) console.warn('Owners fetch error (run the SQL?):', ownersRes.error);
+
     JOBS = (jobsRes.data || []).map(normalizeJob);
     WORKERS = workersRes.data || [];
+    OWNERS = ownersRes.data || [];
     ACTIVITY = actRes.data || [];
     MSGS = {};
     (msgsRes.data || []).forEach(m => {
@@ -493,7 +507,7 @@ async function sbFetchAll() {
     });
     if (setRes.data) SETTINGS = { owner_pin: setRes.data.owner_pin };
 
-    // If this is the very first load (no workers in DB), seed defaults
+    // Seed default workers on first run
     if (WORKERS.length === 0) {
       const seed = [
         { id:'w1', name:'Juan', pin:'1234', color:DEFAULT_COLORS[1] },
@@ -506,9 +520,23 @@ async function sbFetchAll() {
       WORKERS = seed;
     }
 
+    // Seed default owners on first run (if SQL didn't already do it)
+    if (OWNERS.length === 0 && !ownersRes.error) {
+      const seedOwners = [
+        { id:'o1', name:'Owner 1', pin:'1111', color:'#F97316' },
+        { id:'o2', name:'Owner 2', pin:'2222', color:'#3B82F6' },
+        { id:'o3', name:'Owner 3', pin:'3333', color:'#10B981' },
+      ];
+      for (const o of seedOwners) {
+        await sb.from('owners').upsert({ ...o, tenant: TENANT });
+      }
+      OWNERS = seedOwners;
+    }
+
     lsSet(KEY_JOBS, JOBS);
     lsSet(KEY_MSGS, MSGS);
     lsSet(KEY_WORKERS, WORKERS);
+    lsSet(KEY_OWNERS, OWNERS);
     lsSet(KEY_ACTIVITY, ACTIVITY);
     lsSet(KEY_SETTINGS, SETTINGS);
 
@@ -581,12 +609,20 @@ async function sbDeleteWorker(id) {
   if (!sb) return;
   await sb.from('workers').delete().eq('id', id).eq('tenant', TENANT);
 }
+async function sbUpsertOwner(o) {
+  if (!sb) return;
+  await sb.from('owners').upsert({ ...o, tenant: TENANT, updated_at: new Date().toISOString() });
+}
+async function sbDeleteOwner(id) {
+  if (!sb) return;
+  await sb.from('owners').delete().eq('id', id).eq('tenant', TENANT);
+}
 async function sbSetOwnerPin(pin) {
   if (!sb) return;
   await sb.from('settings').upsert({ tenant: TENANT, owner_pin: pin, updated_at: new Date().toISOString() });
 }
 
-/* ---------- Realtime subscriptions ---------- */
+/* ---------- Realtime ---------- */
 function startRealtime() {
   if (!sb) return;
   const channel = sb.channel('akats-' + TENANT);
@@ -623,6 +659,12 @@ function startRealtime() {
       lsSet(KEY_WORKERS, WORKERS);
       if (user) render();
     })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'owners', filter: `tenant=eq.${TENANT}` }, async () => {
+      const { data } = await sb.from('owners').select('*').eq('tenant', TENANT).order('name');
+      OWNERS = data || [];
+      lsSet(KEY_OWNERS, OWNERS);
+      if (user) render();
+    })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'settings', filter: `tenant=eq.${TENANT}` }, (payload) => {
       if (payload.new) SETTINGS = { owner_pin: payload.new.owner_pin };
       lsSet(KEY_SETTINGS, SETTINGS);
@@ -635,7 +677,7 @@ function startRealtime() {
 
 /* ---------- Helpers ---------- */
 function isOwner() { return user && user.role === 'owner'; }
-function getOwnerPin() { return SETTINGS.owner_pin || '9999'; }
+function getMasterPin() { return SETTINGS.owner_pin || '9999'; }
 function id() { return Math.random().toString(36).slice(2,10); }
 
 function daysBetween(dateStr) {
@@ -701,10 +743,18 @@ function userAvatar(u, size=32) {
   const color = u?.color || '#64748B';
   return `<div class="worker-avatar" style="background:${color}; width:${size}px; height:${size}px; font-size:${Math.round(size*0.4)}px">${initials(u?.name)}</div>`;
 }
-function findWorker(uid) {
+// findUser: looks across owners, workers, and the legacy "owner" id
+function findUser(uid) {
   if (uid === 'owner') return { id:'owner', name:t('owner_label'), color:'#0F172A' };
-  return WORKERS.find(w => w.id === uid) || { id:uid, name:'?', color:'#64748B' };
+  const o = OWNERS.find(x => x.id === uid);
+  if (o) return o;
+  const w = WORKERS.find(x => x.id === uid);
+  if (w) return w;
+  return { id:uid, name:'?', color:'#64748B' };
 }
+// Backwards-compat alias for any old call sites
+function findWorker(uid) { return findUser(uid); }
+
 function relativeTime(ts) {
   const s = Math.round((Date.now() - ts) / 1000);
   if (s < 60) return 'just now';
@@ -812,10 +862,18 @@ function pinBackspace() { pinBuffer = pinBuffer.slice(0,-1); pinError=false; ren
 function pinClear()      { pinBuffer = ''; pinError=false; renderLock(); }
 
 function checkPin() {
-  if (pinBuffer === getOwnerPin()) {
+  // 1. Specific owner PIN
+  const o = OWNERS.find(x => x.pin === pinBuffer);
+  if (o) {
+    signIn({ id:o.id, name:o.name, role:'owner', color:o.color });
+    return;
+  }
+  // 2. Master backup PIN — generic Owner login
+  if (pinBuffer === getMasterPin()) {
     signIn({ id:'owner', name:t('owner_label'), role:'owner', color:'#0F172A' });
     return;
   }
+  // 3. Worker PIN
   const w = WORKERS.find(x => x.pin === pinBuffer);
   if (w) {
     signIn({ id:w.id, name:w.name, role:'worker', color:w.color });
@@ -1101,7 +1159,7 @@ function openJobDetail(jobId) {
             return `
               <div class="photo-tile">
                 <img src="${src}" alt="" />
-                ${by ? `<div class="absolute bottom-1 left-1" title="${escapeHtml(findWorker(by).name)}">${userAvatar(findWorker(by), 22)}</div>` : ''}
+                ${by ? `<div class="absolute bottom-1 left-1" title="${escapeHtml(findUser(by).name)}">${userAvatar(findUser(by), 22)}</div>` : ''}
                 <button onclick="deletePhoto('${j.id}',${i})" class="absolute top-1 right-1 w-7 h-7 bg-black/60 text-white rounded-full text-sm font-bold hover:bg-black/80" style="min-height:auto">×</button>
               </div>`;
           }).join('')}
@@ -1188,10 +1246,8 @@ function row(label, val) {
 async function setStage(jobId, stage) {
   const j = JOBS.find(x => x.id === jobId); if (!j) return;
   if (j.stage === stage) { closeModal(); return; }
-  // Confirm for milestone stages
   if (stage === 'done' || stage === 'paid') {
     const titleKey = stage === 'done' ? 'confirm_done_title' : 'confirm_paid_title';
-    const msgKey   = stage === 'done' ? 'confirm_done_msg'   : 'confirm_paid_msg';
     confirmDialog({
       title:   t(titleKey),
       message: `${j.name}${j.customer ? ' — ' + j.customer : ''}`,
@@ -1447,16 +1503,19 @@ function renderActivity() {
     (groups[day] = groups[day] || []).push(a);
   });
 
-  const workerOptions = [
+  // Filter chips: All, master Owner (if anyone has used it), each owner, each worker
+  const masterUsed = ACTIVITY.some(a => (a.userId || a.user_id) === 'owner');
+  const filterOptions = [
     { id:'all', name:t('all_workers'), color:'#64748B' },
-    { id:'owner', name:t('owner_label'), color:'#0F172A' },
+    ...(masterUsed ? [{ id:'owner', name:t('owner_label'), color:'#0F172A' }] : []),
+    ...OWNERS,
     ...WORKERS,
   ];
 
   return `
     <h2 class="text-lg font-extrabold text-slate-800 mb-3 px-1">${t('recent_activity')}</h2>
     <div class="flex gap-2 mb-4 overflow-x-auto scroll-x pb-1">
-      ${workerOptions.map(w => `
+      ${filterOptions.map(w => `
         <button onclick="activityFilter='${w.id}'; render();"
           class="px-3 py-2 rounded-full font-bold text-sm whitespace-nowrap transition flex items-center gap-2 ${activityFilter===w.id ? 'bg-slate-900 text-white' : 'bg-white border-2 border-slate-200 text-slate-700'}">
           ${w.id !== 'all' ? userAvatar(w, 22) : ''}
@@ -1475,10 +1534,7 @@ function renderActivity() {
 
 function activityRow(a, showJob) {
   const uid = a.userId || a.user_id;
-  const urole = a.userRole || a.user_role;
-  const u = urole === 'owner'
-    ? { id:'owner', name:t('owner_label'), color:'#0F172A' }
-    : findWorker(uid);
+  const u = findUser(uid);
   const jobId = a.jobId || a.job_id;
   const job = JOBS.find(j => j.id === jobId);
   const jobName = job ? job.name : a.data?.name || '—';
@@ -1528,9 +1584,7 @@ function renderMessages() {
       ${msgs.length === 0
         ? `<div class="text-center text-slate-400 py-8 text-sm">${t('no_messages')}</div>`
         : msgs.map(m => {
-            const u = m.userId === 'owner'
-              ? { id:'owner', name:t('owner_label'), color:'#0F172A' }
-              : findWorker(m.userId || '');
+            const u = findUser(m.userId || '');
             return `
               <div class="flex gap-2 items-start">
                 ${userAvatar(u, 32)}
@@ -1613,6 +1667,27 @@ function openSettings() {
 
     <div class="mb-6">
       <div class="flex items-center justify-between mb-3">
+        <div class="text-xs font-bold text-slate-500 uppercase">${t('owners')}</div>
+      </div>
+      <div class="space-y-2 mb-3">
+        ${OWNERS.map(o => `
+          <div class="flex items-center gap-3 bg-white border border-amber-200 rounded-xl p-3">
+            ${userAvatar(o, 36)}
+            <div class="flex-1 min-w-0">
+              <div class="font-bold truncate">${escapeHtml(o.name)} <span class="role-badge role-owner ml-1">${t('owner_label')}</span></div>
+              <div class="text-xs text-slate-500">PIN: ${escapeHtml(o.pin)}</div>
+            </div>
+            <button onclick="openOwnerForm('${o.id}')" class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-sm font-bold" style="min-height:auto">✎</button>
+            <button onclick="deleteOwner('${o.id}')" class="px-3 py-2 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 text-sm font-bold" style="min-height:auto">×</button>
+          </div>`).join('')}
+      </div>
+      <button onclick="openOwnerForm()" class="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 rounded-xl">
+        ${t('add_owner')}
+      </button>
+    </div>
+
+    <div class="mb-6">
+      <div class="flex items-center justify-between mb-3">
         <div class="text-xs font-bold text-slate-500 uppercase">${t('workers')}</div>
       </div>
       <div class="space-y-2 mb-3">
@@ -1633,14 +1708,97 @@ function openSettings() {
     </div>
 
     <div class="border-t border-slate-200 pt-4">
-      <div class="text-xs font-bold text-slate-500 uppercase mb-2">${t('owner_pin')}</div>
+      <div class="text-xs font-bold text-slate-500 uppercase mb-1">${t('master_pin')}</div>
+      <div class="text-xs text-slate-500 mb-2">${t('master_pin_help')}</div>
       <button onclick="openOwnerPinForm()" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold py-3 rounded-xl">
-        ${t('change_owner_pin')}
+        ${t('change_master_pin')} (${escapeHtml(getMasterPin())})
       </button>
     </div>
   `);
 }
 
+/* ---------- OWNER FORM ---------- */
+function openOwnerForm(ownerId) {
+  const editing = ownerId ? OWNERS.find(o => o.id === ownerId) : null;
+  const o = editing || { name:'', pin:'', color: DEFAULT_COLORS[OWNERS.length % DEFAULT_COLORS.length] };
+  modal(`
+    <div class="flex items-start justify-between gap-3 mb-4">
+      <div class="text-2xl font-extrabold">${editing ? t('edit_owner') : t('new_owner')}</div>
+      <button onclick="openSettings()" class="w-10 h-10 rounded-full bg-slate-100 hover:bg-slate-200 grid place-items-center text-xl font-bold">×</button>
+    </div>
+    <form id="owner-form" onsubmit="event.preventDefault(); saveOwner(${editing ? `'${editing.id}'` : 'null'});" class="space-y-3">
+      <div>
+        <label class="block text-xs font-bold text-slate-600 uppercase mb-1">${t('worker_name')} *</label>
+        <input name="name" type="text" value="${escapeHtml(o.name)}" required
+          class="w-full px-4 py-3 rounded-xl border-2 border-slate-200 focus:border-brand-400 focus:outline-none text-base" />
+      </div>
+      <div>
+        <label class="block text-xs font-bold text-slate-600 uppercase mb-1">${t('worker_pin')} *</label>
+        <input name="pin" type="text" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" value="${escapeHtml(o.pin)}" required
+          class="w-full px-4 py-3 rounded-xl border-2 border-slate-200 focus:border-brand-400 focus:outline-none text-base font-mono tracking-widest" />
+      </div>
+      <div>
+        <label class="block text-xs font-bold text-slate-600 uppercase mb-2">${t('worker_color')}</label>
+        <div class="flex flex-wrap gap-2">
+          ${DEFAULT_COLORS.map(c => `
+            <label class="cursor-pointer">
+              <input type="radio" name="color" value="${c}" ${c===o.color?'checked':''} class="sr-only peer" />
+              <div class="w-10 h-10 rounded-full peer-checked:ring-4 peer-checked:ring-offset-2 peer-checked:ring-slate-400" style="background:${c}"></div>
+            </label>`).join('')}
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-2 pt-2">
+        <button type="button" onclick="openSettings()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 rounded-xl">${t('cancel')}</button>
+        <button type="submit" class="bg-amber-500 hover:bg-amber-600 text-white font-extrabold py-3 rounded-xl">${t('save')}</button>
+      </div>
+    </form>
+  `);
+}
+
+async function saveOwner(ownerId) {
+  const f = document.getElementById('owner-form');
+  const data = Object.fromEntries(new FormData(f).entries());
+  if (!data.name.trim()) { toast(t('name_required'), true); return; }
+  if (!/^\d{4}$/.test(data.pin)) { toast(t('pin_invalid'), true); return; }
+  // Master PIN clash
+  if (data.pin === getMasterPin()) { toast(t('pin_duplicate'), true); return; }
+  // Worker PIN clash
+  if (WORKERS.some(w => w.pin === data.pin)) { toast(t('pin_duplicate'), true); return; }
+  // Other owner PIN clash
+  if (OWNERS.some(o => o.pin === data.pin && o.id !== ownerId)) { toast(t('pin_duplicate'), true); return; }
+
+  let o;
+  if (ownerId) {
+    o = OWNERS.find(x => x.id === ownerId);
+    Object.assign(o, data);
+  } else {
+    o = { id:id(), name:data.name, pin:data.pin, color:data.color };
+    OWNERS.push(o);
+  }
+  lsSet(KEY_OWNERS, OWNERS);
+  await sbUpsertOwner(o);
+  toast(t('saved'));
+  openSettings();
+}
+
+async function deleteOwner(ownerId) {
+  if (OWNERS.length <= 1) { toast(t('cant_remove_last_owner'), true); return; }
+  confirmDialog({
+    title: t('delete_owner_confirm'),
+    message: OWNERS.find(o => o.id === ownerId)?.name || '',
+    confirmLabel: t('delete'),
+    danger: true,
+    onConfirm: async () => {
+      OWNERS = OWNERS.filter(o => o.id !== ownerId);
+      lsSet(KEY_OWNERS, OWNERS);
+      await sbDeleteOwner(ownerId);
+      toast(t('deleted'));
+      openSettings();
+    }
+  });
+}
+
+/* ---------- WORKER FORM ---------- */
 function openWorkerForm(workerId) {
   const editing = workerId ? WORKERS.find(w => w.id === workerId) : null;
   const w = editing || { name:'', pin:'', color: DEFAULT_COLORS[WORKERS.length % DEFAULT_COLORS.length] };
@@ -1683,7 +1841,8 @@ async function saveWorker(workerId) {
   const data = Object.fromEntries(new FormData(f).entries());
   if (!data.name.trim()) { toast(t('name_required'), true); return; }
   if (!/^\d{4}$/.test(data.pin)) { toast(t('pin_invalid'), true); return; }
-  if (data.pin === getOwnerPin()) { toast(t('pin_duplicate'), true); return; }
+  if (data.pin === getMasterPin()) { toast(t('pin_duplicate'), true); return; }
+  if (OWNERS.some(o => o.pin === data.pin)) { toast(t('pin_duplicate'), true); return; }
   if (WORKERS.some(w => w.pin === data.pin && w.id !== workerId)) { toast(t('pin_duplicate'), true); return; }
 
   let w;
@@ -1701,25 +1860,33 @@ async function saveWorker(workerId) {
 }
 
 async function deleteWorker(workerId) {
-  if (!confirm(t('delete_worker_confirm'))) return;
-  WORKERS = WORKERS.filter(w => w.id !== workerId);
-  lsSet(KEY_WORKERS, WORKERS);
-  await sbDeleteWorker(workerId);
-  toast(t('deleted'));
-  openSettings();
+  confirmDialog({
+    title: t('delete_worker_confirm'),
+    message: WORKERS.find(w => w.id === workerId)?.name || '',
+    confirmLabel: t('delete'),
+    danger: true,
+    onConfirm: async () => {
+      WORKERS = WORKERS.filter(w => w.id !== workerId);
+      lsSet(KEY_WORKERS, WORKERS);
+      await sbDeleteWorker(workerId);
+      toast(t('deleted'));
+      openSettings();
+    }
+  });
 }
 
 function openOwnerPinForm() {
   modal(`
     <div class="flex items-start justify-between gap-3 mb-4">
-      <div class="text-2xl font-extrabold">${t('change_owner_pin')}</div>
+      <div class="text-2xl font-extrabold">${t('change_master_pin')}</div>
       <button onclick="openSettings()" class="w-10 h-10 rounded-full bg-slate-100 hover:bg-slate-200 grid place-items-center text-xl font-bold">×</button>
     </div>
     <form id="owner-pin-form" onsubmit="event.preventDefault(); saveOwnerPin();" class="space-y-3">
       <div>
-        <label class="block text-xs font-bold text-slate-600 uppercase mb-1">${t('owner_pin')} *</label>
-        <input name="pin" type="text" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" value="${getOwnerPin()}" required
+        <label class="block text-xs font-bold text-slate-600 uppercase mb-1">${t('master_pin')} *</label>
+        <input name="pin" type="text" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" value="${getMasterPin()}" required
           class="w-full px-4 py-3 rounded-xl border-2 border-slate-200 focus:border-brand-400 focus:outline-none text-base font-mono tracking-widest" />
+        <div class="text-xs text-slate-500 mt-1">${t('master_pin_help')}</div>
       </div>
       <div class="grid grid-cols-2 gap-2 pt-2">
         <button type="button" onclick="openSettings()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 rounded-xl">${t('cancel')}</button>
@@ -1734,6 +1901,7 @@ async function saveOwnerPin() {
   const data = Object.fromEntries(new FormData(f).entries());
   if (!/^\d{4}$/.test(data.pin)) { toast(t('pin_invalid'), true); return; }
   if (WORKERS.some(w => w.pin === data.pin)) { toast(t('pin_duplicate'), true); return; }
+  if (OWNERS.some(o => o.pin === data.pin)) { toast(t('pin_duplicate'), true); return; }
   SETTINGS.owner_pin = data.pin;
   lsSet(KEY_SETTINGS, SETTINGS);
   await sbSetOwnerPin(data.pin);
@@ -1741,9 +1909,8 @@ async function saveOwnerPin() {
   openSettings();
 }
 
-/* ---------- CONFIRM POPUP ---------- */
+/* ---------- CONFIRM POPUP (with ghost-click protection) ---------- */
 function confirmDialog({ title, message, confirmLabel, cancelLabel, danger, onConfirm }) {
-  // Block ghost-clicks: ignore any click event for the first 350ms
   const openedAt = Date.now();
   const isReady = () => (Date.now() - openedAt) > 350;
 
@@ -1765,7 +1932,6 @@ function confirmDialog({ title, message, confirmLabel, cancelLabel, danger, onCo
     </div>`;
   document.body.appendChild(wrapper);
 
-  // Disable the buttons for the first 350ms so a ghost-click can't trigger them
   const cancelBtn = wrapper.querySelector('.cancel-btn');
   const confirmBtn = wrapper.querySelector('.confirm-btn');
   cancelBtn.disabled = true;
@@ -1795,7 +1961,6 @@ window.addEventListener('beforeinstallprompt', (e) => {
 });
 
 function maybeShowInstallBanner() {
-  // Don't show if already dismissed or installed
   if (localStorage.getItem('akats_install_dismissed')) return;
   if (window.matchMedia('(display-mode: standalone)').matches) return;
 
@@ -1811,7 +1976,6 @@ function maybeShowInstallBanner() {
         <button onclick="triggerInstall()" class="bg-brand-500 text-white font-bold px-4 py-2 rounded-lg text-sm" style="min-height:auto">${t('install_btn')}</button>
       </div>`;
   } else {
-    // iOS has no beforeinstallprompt — show instructions once
     const ua = navigator.userAgent;
     const isIos = /iPhone|iPad|iPod/i.test(ua) && !/CriOS|FxiOS/i.test(ua);
     if (isIos) {
@@ -1852,18 +2016,15 @@ document.getElementById('logout-btn').addEventListener('click', () => {
 });
 document.getElementById('settings-btn').addEventListener('click', openSettings);
 
-// Online/offline tracking
 window.addEventListener('online',  () => { if (sb) sbFetchAll(); });
 window.addEventListener('offline', () => setSyncState('offline'));
 
-// Service worker
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').catch(() => {/* ok */});
   });
 }
 
-// Initial boot
 if (user) bootApp(); else renderLock();
 
 if (CONFIGURED) {
