@@ -1743,12 +1743,17 @@ async function saveOwnerPin() {
 
 /* ---------- CONFIRM POPUP ---------- */
 function confirmDialog({ title, message, confirmLabel, cancelLabel, danger, onConfirm }) {
-  const root = document.getElementById('modal-root');
-  // Stack on top of any existing modal
+  // Block ghost-clicks: ignore any click event for the first 350ms
+  const openedAt = Date.now();
+  const isReady = () => (Date.now() - openedAt) > 350;
+
   const wrapper = document.createElement('div');
   wrapper.className = 'modal-backdrop';
   wrapper.style.zIndex = 70;
-  wrapper.onclick = (e) => { if (e.target === wrapper) wrapper.remove(); };
+  wrapper.onclick = (e) => {
+    if (!isReady()) { e.stopPropagation(); e.preventDefault(); return; }
+    if (e.target === wrapper) wrapper.remove();
+  };
   wrapper.innerHTML = `
     <div class="modal-card" style="max-width:420px">
       <div class="text-2xl font-extrabold mb-2">${escapeHtml(title)}</div>
@@ -1759,8 +1764,16 @@ function confirmDialog({ title, message, confirmLabel, cancelLabel, danger, onCo
       </div>
     </div>`;
   document.body.appendChild(wrapper);
-  wrapper.querySelector('.cancel-btn').onclick = () => wrapper.remove();
-  wrapper.querySelector('.confirm-btn').onclick = () => { wrapper.remove(); onConfirm(); };
+
+  // Disable the buttons for the first 350ms so a ghost-click can't trigger them
+  const cancelBtn = wrapper.querySelector('.cancel-btn');
+  const confirmBtn = wrapper.querySelector('.confirm-btn');
+  cancelBtn.disabled = true;
+  confirmBtn.disabled = true;
+  setTimeout(() => { cancelBtn.disabled = false; confirmBtn.disabled = false; }, 350);
+
+  cancelBtn.onclick = () => { if (isReady()) wrapper.remove(); };
+  confirmBtn.onclick = () => { if (isReady()) { wrapper.remove(); onConfirm(); } };
 }
 
 /* ---------- MODAL ---------- */
