@@ -219,15 +219,15 @@
      ============================================================ -->
 <script>
 window.AKATS_CONFIG = {
-  SUPABASE_URL:  "https://cjxnblliucvpndvrpirg.supabase.co",
-   SUPABASE_ANON: "eyJhbGciOiJI...long string of letters and numbers...",
+  SUPABASE_URL:  "PASTE_YOUR_SUPABASE_URL_HERE",
+  SUPABASE_ANON: "PASTE_YOUR_ANON_KEY_HERE",
   TENANT:        "akats",   // leave alone unless you know why to change it
 };
 </script>
 
 <script>
 /* ============================================================
-   A-Kats — Live (Supabase) v5 — multi-owner support
+   A-Kats — Live (Supabase) v6 — multi-owner + time tracking
    ============================================================ */
 
 /* ---------- i18n ---------- */
@@ -319,6 +319,32 @@ const I18N = {
     setup_msg:"The app is not connected to a server yet. Open index.html and paste your Supabase URL and key at the top.",
     sync_error:"Couldn't reach server",
     loading:"Loading…",
+    // Time tracking
+    nav_time:"Time", time_title:"Time",
+    clock_in:"Clock In", clock_out:"Clock Out",
+    clocked_in_since:"Clocked in since",
+    not_clocked_in:"Not clocked in",
+    today_hours:"Today", week_hours:"This Week", last_week_hours:"Last Week",
+    total_hours:"Total Hours", hrs:"hrs",
+    payroll:"Payroll", time_entries:"Time Entries",
+    payroll_summary:"Payroll Summary",
+    no_time_entries:"No time entries yet",
+    pay_week_start:"Pay week starts on",
+    sun:"Sunday", mon:"Monday", tue:"Tuesday", wed:"Wednesday",
+    thu:"Thursday", fri:"Friday", sat:"Saturday",
+    open_shift:"Open shift", needs_review:"Needs review",
+    edit_entry:"Edit entry", new_entry:"Add entry",
+    field_clock_in:"Clock in time", field_clock_out:"Clock out time",
+    field_worker:"Worker", field_entry_note:"Note (optional)",
+    delete_entry_confirm:"Delete this time entry?",
+    auto_closed_msg:"Auto-closed after 16 hours \u2014 please review",
+    add_time_entry:"+ Add entry",
+    view_list:"List", view_summary:"Summary",
+    in_at:"In", out_at:"Out", duration:"Duration",
+    cant_clock_in:"You're already clocked in",
+    cant_clock_out:"You're not clocked in",
+    clocked_in_toast:"Clocked in",
+    clocked_out_toast:"Clocked out",
   },
   es: {
     nav_home:"Inicio", nav_jobs:"Trabajos", nav_messages:"Mensajes", nav_money:"Dinero", nav_activity:"Actividad",
@@ -407,6 +433,32 @@ const I18N = {
     setup_msg:"La app no está conectada al servidor. Abre index.html y pega tu URL y clave de Supabase al inicio del archivo.",
     sync_error:"No se pudo conectar al servidor",
     loading:"Cargando…",
+    // Time tracking
+    nav_time:"Tiempo", time_title:"Tiempo",
+    clock_in:"Entrar", clock_out:"Salir",
+    clocked_in_since:"Trabajando desde",
+    not_clocked_in:"Sin entrar",
+    today_hours:"Hoy", week_hours:"Esta Semana", last_week_hours:"Semana Pasada",
+    total_hours:"Horas Totales", hrs:"hrs",
+    payroll:"Nómina", time_entries:"Entradas de Tiempo",
+    payroll_summary:"Resumen de Nómina",
+    no_time_entries:"Sin entradas todavía",
+    pay_week_start:"Semana de pago empieza",
+    sun:"Domingo", mon:"Lunes", tue:"Martes", wed:"Miércoles",
+    thu:"Jueves", fri:"Viernes", sat:"Sábado",
+    open_shift:"Turno abierto", needs_review:"Revisar",
+    edit_entry:"Editar entrada", new_entry:"Nueva entrada",
+    field_clock_in:"Hora de entrada", field_clock_out:"Hora de salida",
+    field_worker:"Trabajador", field_entry_note:"Nota (opcional)",
+    delete_entry_confirm:"¿Borrar esta entrada?",
+    auto_closed_msg:"Cerrado automáticamente tras 16 horas \u2014 favor revisar",
+    add_time_entry:"+ Agregar entrada",
+    view_list:"Lista", view_summary:"Resumen",
+    in_at:"Entrada", out_at:"Salida", duration:"Duración",
+    cant_clock_in:"Ya estás trabajando",
+    cant_clock_out:"No estás trabajando",
+    clocked_in_toast:"Entraste",
+    clocked_out_toast:"Saliste",
   }
 };
 
@@ -445,12 +497,14 @@ const KEY_WORKERS = 'akats_workers_v4';
 const KEY_OWNERS  = 'akats_owners_v5';
 const KEY_ACTIVITY = 'akats_activity_v4';
 const KEY_SETTINGS = 'akats_settings_v4';
+const KEY_TIME    = 'akats_time_v6';
 
 function lsGet(k, def) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : def; } catch { return def; } }
 function lsSet(k, v)   { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
 
 /* ---------- Defaults ---------- */
 const DEFAULT_COLORS = ['#F97316','#3B82F6','#10B981','#8B5CF6','#EC4899','#14B8A6','#F59E0B','#6366F1'];
+const AUTO_CLOSE_HOURS = 16;
 
 /* ---------- State ---------- */
 let JOBS     = lsGet(KEY_JOBS, []);
@@ -459,6 +513,7 @@ let WORKERS  = lsGet(KEY_WORKERS, []);
 let OWNERS   = lsGet(KEY_OWNERS, []);
 let ACTIVITY = lsGet(KEY_ACTIVITY, []);
 let SETTINGS = lsGet(KEY_SETTINGS, { owner_pin: '9999' });
+let TIMES    = lsGet(KEY_TIME, []);
 let user     = lsGet(KEY_USER, null);
 
 let route = 'home';
@@ -467,6 +522,8 @@ let jobsFilter = 'all';
 let jobsSearch = '';
 let moneySort = 'owed';
 let activityFilter = 'all';
+let timeView = 'summary';   // 'summary' or 'list' (owner only)
+let timeWorkerFilter = 'all';
 let installDeferred = null;
 
 JOBS.forEach(j => {
@@ -481,24 +538,26 @@ async function sbFetchAll() {
   if (!sb) return;
   try {
     setSyncState('connecting');
-    const [jobsRes, msgsRes, workersRes, ownersRes, actRes, setRes] = await Promise.all([
+    const [jobsRes, msgsRes, workersRes, ownersRes, actRes, setRes, timeRes] = await Promise.all([
       sb.from('jobs').select('*').eq('tenant', TENANT).eq('deleted', false).order('updated_at', { ascending: false }),
       sb.from('messages').select('*').eq('tenant', TENANT).order('at', { ascending: true }),
       sb.from('workers').select('*').eq('tenant', TENANT).order('name'),
       sb.from('owners').select('*').eq('tenant', TENANT).order('name'),
       sb.from('activity').select('*').eq('tenant', TENANT).order('at', { ascending: false }).limit(500),
       sb.from('settings').select('*').eq('tenant', TENANT).maybeSingle(),
+      sb.from('time_entries').select('*').eq('tenant', TENANT).order('clock_in', { ascending: false }).limit(2000),
     ]);
 
     if (jobsRes.error) throw jobsRes.error;
     if (workersRes.error) throw workersRes.error;
-    // Owners errors are non-fatal (table might not exist yet on first run)
     if (ownersRes.error) console.warn('Owners fetch error (run the SQL?):', ownersRes.error);
+    if (timeRes.error) console.warn('Time entries fetch error (run the SQL?):', timeRes.error);
 
     JOBS = (jobsRes.data || []).map(normalizeJob);
     WORKERS = workersRes.data || [];
     OWNERS = ownersRes.data || [];
     ACTIVITY = actRes.data || [];
+    TIMES = (timeRes.data || []).map(normalizeTime);
     MSGS = {};
     (msgsRes.data || []).forEach(m => {
       (MSGS[m.job_id] = MSGS[m.job_id] || []).push({
@@ -539,6 +598,10 @@ async function sbFetchAll() {
     lsSet(KEY_OWNERS, OWNERS);
     lsSet(KEY_ACTIVITY, ACTIVITY);
     lsSet(KEY_SETTINGS, SETTINGS);
+    lsSet(KEY_TIME, TIMES);
+
+    // Auto-close any open shifts that have been running too long
+    autoCloseStaleShifts();
 
     setSyncState('online');
     if (user) render();
@@ -622,6 +685,59 @@ async function sbSetOwnerPin(pin) {
   await sb.from('settings').upsert({ tenant: TENANT, owner_pin: pin, updated_at: new Date().toISOString() });
 }
 
+/* ---------- Time entry helpers ---------- */
+function normalizeTime(row) {
+  return {
+    id: row.id,
+    workerId: row.worker_id,
+    workerName: row.worker_name,
+    clockIn: Number(row.clock_in),
+    clockOut: row.clock_out == null ? null : Number(row.clock_out),
+    autoClosed: !!row.auto_closed,
+    note: row.note || '',
+    editedBy: row.edited_by || null,
+    editedAt: row.edited_at == null ? null : Number(row.edited_at),
+  };
+}
+function timeToRow(e) {
+  return {
+    id: e.id,
+    tenant: TENANT,
+    worker_id: e.workerId,
+    worker_name: e.workerName,
+    clock_in: e.clockIn,
+    clock_out: e.clockOut,
+    auto_closed: !!e.autoClosed,
+    note: e.note || null,
+    edited_by: e.editedBy || null,
+    edited_at: e.editedAt || null,
+  };
+}
+async function sbUpsertTime(e) {
+  if (!sb) return;
+  const { error } = await sb.from('time_entries').upsert(timeToRow(e));
+  if (error) { console.error(error); toast(t('sync_error'), true); }
+}
+async function sbDeleteTime(id) {
+  if (!sb) return;
+  await sb.from('time_entries').delete().eq('id', id).eq('tenant', TENANT);
+}
+
+function autoCloseStaleShifts() {
+  const now = Date.now();
+  const cutoff = AUTO_CLOSE_HOURS * 3600 * 1000;
+  let changed = false;
+  TIMES.forEach(e => {
+    if (e.clockOut == null && (now - e.clockIn) > cutoff) {
+      e.clockOut = e.clockIn + cutoff;
+      e.autoClosed = true;
+      sbUpsertTime(e);
+      changed = true;
+    }
+  });
+  if (changed) lsSet(KEY_TIME, TIMES);
+}
+
 /* ---------- Realtime ---------- */
 function startRealtime() {
   if (!sb) return;
@@ -663,6 +779,19 @@ function startRealtime() {
       const { data } = await sb.from('owners').select('*').eq('tenant', TENANT).order('name');
       OWNERS = data || [];
       lsSet(KEY_OWNERS, OWNERS);
+      if (user) render();
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'time_entries', filter: `tenant=eq.${TENANT}` }, (payload) => {
+      const row = payload.new || payload.old;
+      if (payload.eventType === 'DELETE') {
+        TIMES = TIMES.filter(e => e.id !== row.id);
+      } else {
+        const ne = normalizeTime(row);
+        const i = TIMES.findIndex(e => e.id === ne.id);
+        if (i >= 0) TIMES[i] = ne; else TIMES.unshift(ne);
+        TIMES.sort((a,b) => b.clockIn - a.clockIn);
+      }
+      lsSet(KEY_TIME, TIMES);
       if (user) render();
     })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'settings', filter: `tenant=eq.${TENANT}` }, (payload) => {
@@ -762,6 +891,71 @@ function relativeTime(ts) {
   if (s < 86400) return `${Math.floor(s/3600)}h ago`;
   if (s < 604800) return `${Math.floor(s/86400)}d ago`;
   return new Date(ts).toLocaleDateString();
+}
+
+/* ---------- Time tracking helpers ---------- */
+function fmtClockTime(ts) {
+  if (!ts) return '—';
+  return new Date(ts).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' });
+}
+function fmtDate(ts) {
+  if (!ts) return '—';
+  return new Date(ts).toLocaleDateString([], { weekday:'short', month:'short', day:'numeric' });
+}
+function fmtDateTimeLocal(ts) {
+  // For datetime-local input
+  if (!ts) return '';
+  const d = new Date(ts);
+  const pad = n => String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+function parseDateTimeLocal(s) {
+  if (!s) return null;
+  const d = new Date(s);
+  return isNaN(d) ? null : d.getTime();
+}
+function fmtHours(ms) {
+  if (!ms || ms < 0) return '0h 0m';
+  const totalMin = Math.round(ms / 60000);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return `${h}h ${m}m`;
+}
+function fmtHoursDecimal(ms) {
+  if (!ms || ms < 0) return '0.00';
+  return (ms / 3600000).toFixed(2);
+}
+function entryDuration(e) {
+  const end = e.clockOut == null ? Date.now() : e.clockOut;
+  return Math.max(0, end - e.clockIn);
+}
+function getOpenShift(workerId) {
+  return TIMES.find(e => e.workerId === workerId && e.clockOut == null && !e.autoClosed);
+}
+// Get start of pay week containing `ts` for a given pay-week-start day (0=Sun..6=Sat)
+function payWeekStart(ts, weekStartDow) {
+  const d = new Date(ts);
+  d.setHours(0,0,0,0);
+  const diff = (d.getDay() - (weekStartDow ?? 0) + 7) % 7;
+  d.setDate(d.getDate() - diff);
+  return d.getTime();
+}
+function dayName(dow) {
+  return [t('sun'),t('mon'),t('tue'),t('wed'),t('thu'),t('fri'),t('sat')][dow] || '';
+}
+function dayNameShort(dow) {
+  return [t('sun'),t('mon'),t('tue'),t('wed'),t('thu'),t('fri'),t('sat')][dow]?.slice(0,3) || '';
+}
+function workerPayWeekStart(workerId) {
+  const w = WORKERS.find(x => x.id === workerId);
+  return Number(w?.pay_week_start ?? 0);
+}
+// Sum durations of entries (closed only by default; if includeOpen, include the running shift)
+function sumEntries(entries, includeOpen=false) {
+  return entries.reduce((s,e) => {
+    if (e.clockOut == null && !includeOpen) return s;
+    return s + entryDuration(e);
+  }, 0);
 }
 
 /* ---------- Activity logging ---------- */
@@ -918,12 +1112,14 @@ function bootApp() {
         { r:'home',     label:t('nav_home'),     icon:'home' },
         { r:'jobs',     label:t('nav_jobs'),     icon:'jobs' },
         { r:'money',    label:t('nav_money'),    icon:'money' },
+        { r:'time',     label:t('nav_time'),     icon:'time' },
         { r:'activity', label:t('nav_activity'), icon:'activity' },
         { r:'messages', label:t('nav_messages'), icon:'msg' },
       ]
     : [
         { r:'home',     label:t('nav_home'),     icon:'home' },
         { r:'jobs',     label:t('nav_jobs'),     icon:'jobs' },
+        { r:'time',     label:t('nav_time'),     icon:'time' },
         { r:'messages', label:t('nav_messages'), icon:'msg' },
       ];
   const icons = {
@@ -931,6 +1127,7 @@ function bootApp() {
     jobs:`<svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 7h16M4 12h16M4 17h16"/></svg>`,
     money:`<svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v18M7 7h7a3 3 0 010 6H10a3 3 0 000 6h7"/></svg>`,
     activity:`<svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h10"/><circle cx="20" cy="18" r="1.5"/></svg>`,
+    time:`<svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path stroke-linecap="round" stroke-linejoin="round" d="M12 7v5l3 2"/></svg>`,
     msg:`<svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 5h18v12H7l-4 4z"/></svg>`,
   };
   const nav = document.getElementById('bottom-nav-inner');
@@ -962,6 +1159,7 @@ function render() {
   else if (route === 'jobs')     app.innerHTML = renderJobsList();
   else if (route === 'money')    app.innerHTML = isOwner() ? renderMoney() : renderHome();
   else if (route === 'activity') app.innerHTML = isOwner() ? renderActivity() : renderHome();
+  else if (route === 'time')     app.innerHTML = renderTime();
   else if (route === 'messages') app.innerHTML = renderMessages();
   attachListHandlers();
 }
@@ -998,12 +1196,36 @@ function renderHome() {
         ${t('add_job')}
       </button>
     </div>
+    ${!isOwner() ? renderClockButton() : ''}
     ${section(t('behind_title'), overdue, t('behind_none'), { alert:true })}
     ${isOwner() ? section(t('owed_title'), owed, '—', { money:true }) : ''}
     ${section(t('today_title'), working, '—')}
     ${section(t('upcoming_title'), upcoming, '—')}
     ${section(t('waiting_title'), waiting, '—')}
   `;
+}
+
+function renderClockButton() {
+  if (!user || isOwner()) return '';
+  const open = getOpenShift(user.id);
+  if (open) {
+    const dur = entryDuration(open);
+    return `
+      <div class="mb-6 bg-gradient-to-br from-green-500 to-green-600 rounded-2xl p-5 shadow-lg text-white">
+        <div class="text-xs font-bold uppercase opacity-90 mb-1">${t('clocked_in_since')} ${fmtClockTime(open.clockIn)}</div>
+        <div class="text-3xl font-extrabold mb-3">${fmtHours(dur)}</div>
+        <button onclick="clockOut()" class="w-full bg-white text-green-700 font-extrabold text-lg py-4 rounded-xl shadow active:scale-95 transition">
+          ⏹  ${t('clock_out')}
+        </button>
+      </div>`;
+  } else {
+    return `
+      <div class="mb-6">
+        <button onclick="clockIn()" class="w-full bg-gradient-to-br from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-extrabold text-xl py-6 rounded-2xl shadow-lg active:scale-95 transition">
+          ▶  ${t('clock_in')}
+        </button>
+      </div>`;
+  }
 }
 
 function jobCard(j, opts={}) {
@@ -1655,6 +1877,374 @@ async function deletePhoto(jobId, idx) {
 }
 
 /* ============================================================
+   TIME TRACKING
+   ============================================================ */
+async function clockIn() {
+  if (!user || isOwner()) return;
+  if (getOpenShift(user.id)) { toast(t('cant_clock_in'), true); return; }
+  const entry = {
+    id: id(),
+    workerId: user.id,
+    workerName: user.name,
+    clockIn: Date.now(),
+    clockOut: null,
+    autoClosed: false,
+    note: '',
+    editedBy: null,
+    editedAt: null,
+  };
+  TIMES.unshift(entry);
+  lsSet(KEY_TIME, TIMES);
+  await sbUpsertTime(entry);
+  toast(t('clocked_in_toast'));
+  render();
+}
+
+async function clockOut() {
+  if (!user || isOwner()) return;
+  const open = getOpenShift(user.id);
+  if (!open) { toast(t('cant_clock_out'), true); return; }
+  open.clockOut = Date.now();
+  lsSet(KEY_TIME, TIMES);
+  await sbUpsertTime(open);
+  toast(t('clocked_out_toast'));
+  render();
+}
+
+function renderTime() {
+  if (isOwner()) return renderTimeOwner();
+  return renderTimeWorker();
+}
+
+function renderTimeWorker() {
+  const myEntries = TIMES.filter(e => e.workerId === user.id).sort((a,b) => b.clockIn - a.clockIn);
+  const open = getOpenShift(user.id);
+
+  // Today
+  const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+  const todayMs = sumEntries(myEntries.filter(e => e.clockIn >= todayStart.getTime()), true);
+
+  // This week (using worker's pay week)
+  const wkStart = workerPayWeekStart(user.id);
+  const thisWeekStart = payWeekStart(Date.now(), wkStart);
+  const lastWeekStart = thisWeekStart - 7 * 86400000;
+  const weekMs = sumEntries(myEntries.filter(e => e.clockIn >= thisWeekStart), true);
+  const lastWeekMs = sumEntries(myEntries.filter(e => e.clockIn >= lastWeekStart && e.clockIn < thisWeekStart));
+
+  // Group entries by day
+  const byDay = {};
+  myEntries.forEach(e => {
+    const d = new Date(e.clockIn); d.setHours(0,0,0,0);
+    const k = d.getTime();
+    (byDay[k] = byDay[k] || []).push(e);
+  });
+
+  return `
+    <h2 class="text-lg font-extrabold text-slate-800 mb-3 px-1">${t('time_title')}</h2>
+
+    ${renderClockButton()}
+
+    <div class="grid grid-cols-3 gap-2 mb-5">
+      <div class="bg-white border-2 border-slate-200 rounded-2xl p-3 text-center">
+        <div class="text-[10px] font-bold text-slate-500 uppercase">${t('today_hours')}</div>
+        <div class="text-lg font-extrabold text-slate-900 mt-1">${fmtHours(todayMs)}</div>
+      </div>
+      <div class="bg-white border-2 border-green-200 rounded-2xl p-3 text-center">
+        <div class="text-[10px] font-bold text-green-700 uppercase">${t('week_hours')}</div>
+        <div class="text-lg font-extrabold text-green-700 mt-1">${fmtHours(weekMs)}</div>
+      </div>
+      <div class="bg-white border-2 border-slate-200 rounded-2xl p-3 text-center">
+        <div class="text-[10px] font-bold text-slate-500 uppercase">${t('last_week_hours')}</div>
+        <div class="text-lg font-extrabold text-slate-700 mt-1">${fmtHours(lastWeekMs)}</div>
+      </div>
+    </div>
+
+    ${myEntries.length === 0
+      ? `<div class="text-center text-slate-500 py-12">${t('no_time_entries')}</div>`
+      : Object.keys(byDay).sort((a,b)=>b-a).map(dayKey => {
+          const items = byDay[dayKey];
+          const dayMs = sumEntries(items, true);
+          return `
+            <div class="mb-4">
+              <div class="flex items-center justify-between mb-2 px-1">
+                <div class="text-xs font-bold text-slate-500 uppercase">${fmtDate(Number(dayKey))}</div>
+                <div class="text-xs font-bold text-slate-700">${fmtHours(dayMs)}</div>
+              </div>
+              ${items.map(e => timeEntryRow(e, false)).join('')}
+            </div>`;
+        }).join('')}
+  `;
+}
+
+function renderTimeOwner() {
+  const workers = WORKERS.slice();
+  const filteredEntries = timeWorkerFilter === 'all'
+    ? TIMES.slice()
+    : TIMES.filter(e => e.workerId === timeWorkerFilter);
+
+  return `
+    <div class="flex items-center justify-between mb-3 px-1">
+      <h2 class="text-lg font-extrabold text-slate-800">${t('time_title')}</h2>
+      <button onclick="openTimeEntryForm()" class="bg-brand-500 hover:bg-brand-600 text-white font-bold px-4 py-2 rounded-xl text-sm" style="min-height:auto">
+        ${t('add_time_entry')}
+      </button>
+    </div>
+
+    <div class="flex gap-2 mb-3">
+      <button onclick="timeView='summary'; render();" class="flex-1 px-4 py-2.5 rounded-full font-bold text-sm transition ${timeView==='summary' ? 'bg-slate-900 text-white' : 'bg-white border-2 border-slate-200 text-slate-700'}">
+        ${t('view_summary')}
+      </button>
+      <button onclick="timeView='list'; render();" class="flex-1 px-4 py-2.5 rounded-full font-bold text-sm transition ${timeView==='list' ? 'bg-slate-900 text-white' : 'bg-white border-2 border-slate-200 text-slate-700'}">
+        ${t('view_list')}
+      </button>
+    </div>
+
+    ${timeView === 'summary' ? renderPayrollSummary(workers) : renderTimeList(filteredEntries, workers)}
+  `;
+}
+
+function renderPayrollSummary(workers) {
+  if (workers.length === 0) {
+    return `<div class="text-center text-slate-500 py-12">${t('no_time_entries')}</div>`;
+  }
+  return workers.map(w => {
+    const wkStart = Number(w.pay_week_start ?? 0);
+    const thisWeekStart = payWeekStart(Date.now(), wkStart);
+    const lastWeekStart = thisWeekStart - 7 * 86400000;
+    const myEntries = TIMES.filter(e => e.workerId === w.id);
+    const thisWeek = myEntries.filter(e => e.clockIn >= thisWeekStart);
+    const lastWeek = myEntries.filter(e => e.clockIn >= lastWeekStart && e.clockIn < thisWeekStart);
+    const thisMs = sumEntries(thisWeek, true);
+    const lastMs = sumEntries(lastWeek);
+    const open = getOpenShift(w.id);
+
+    // Build daily breakdown of this week
+    const days = [];
+    for (let i = 0; i < 7; i++) {
+      const dayStart = thisWeekStart + i * 86400000;
+      const dayEnd = dayStart + 86400000;
+      const dayEntries = thisWeek.filter(e => e.clockIn >= dayStart && e.clockIn < dayEnd);
+      days.push({ ts: dayStart, ms: sumEntries(dayEntries, true), count: dayEntries.length });
+    }
+
+    return `
+      <div class="bg-white border-2 border-slate-200 rounded-2xl p-4 mb-3">
+        <div class="flex items-center gap-3 mb-3">
+          ${userAvatar(w, 40)}
+          <div class="flex-1 min-w-0">
+            <div class="font-bold truncate">${escapeHtml(w.name)}</div>
+            <div class="text-xs text-slate-500">${t('pay_week_start')}: ${dayName(wkStart)}</div>
+          </div>
+          ${open ? `<span class="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded-full">${t('open_shift')}</span>` : ''}
+        </div>
+
+        <div class="grid grid-cols-2 gap-2 mb-3">
+          <div class="bg-green-50 border border-green-200 rounded-xl p-2 text-center">
+            <div class="text-[10px] font-bold text-green-700 uppercase">${t('week_hours')}</div>
+            <div class="text-lg font-extrabold text-green-700">${fmtHours(thisMs)}</div>
+            <div class="text-[10px] text-green-600">${fmtHoursDecimal(thisMs)} ${t('hrs')}</div>
+          </div>
+          <div class="bg-slate-50 border border-slate-200 rounded-xl p-2 text-center">
+            <div class="text-[10px] font-bold text-slate-500 uppercase">${t('last_week_hours')}</div>
+            <div class="text-lg font-extrabold text-slate-700">${fmtHours(lastMs)}</div>
+            <div class="text-[10px] text-slate-500">${fmtHoursDecimal(lastMs)} ${t('hrs')}</div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-7 gap-1">
+          ${days.map(d => {
+            const dow = new Date(d.ts).getDay();
+            const isToday = d.ts === new Date(new Date().setHours(0,0,0,0)).getTime();
+            return `
+              <div class="text-center p-1.5 rounded-lg ${isToday ? 'bg-brand-100' : 'bg-slate-50'}">
+                <div class="text-[9px] font-bold text-slate-500 uppercase">${dayNameShort(dow)}</div>
+                <div class="text-xs font-extrabold ${d.ms > 0 ? 'text-slate-900' : 'text-slate-300'}">${d.ms > 0 ? fmtHoursDecimal(d.ms) : '·'}</div>
+              </div>`;
+          }).join('')}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function renderTimeList(entries, workers) {
+  const workerOptions = [{ id:'all', name:t('all_workers'), color:'#64748B' }, ...workers];
+
+  const groups = {};
+  entries.forEach(e => {
+    const d = new Date(e.clockIn); d.setHours(0,0,0,0);
+    const k = d.getTime();
+    (groups[k] = groups[k] || []).push(e);
+  });
+
+  return `
+    <div class="flex gap-2 mb-3 overflow-x-auto scroll-x pb-1">
+      ${workerOptions.map(w => `
+        <button onclick="timeWorkerFilter='${w.id}'; render();"
+          class="px-3 py-2 rounded-full font-bold text-sm whitespace-nowrap transition flex items-center gap-2 ${timeWorkerFilter===w.id ? 'bg-slate-900 text-white' : 'bg-white border-2 border-slate-200 text-slate-700'}">
+          ${w.id !== 'all' ? userAvatar(w, 22) : ''}
+          ${escapeHtml(w.name)}
+        </button>`).join('')}
+    </div>
+    ${entries.length === 0
+      ? `<div class="text-center text-slate-500 py-12">${t('no_time_entries')}</div>`
+      : Object.keys(groups).sort((a,b)=>b-a).map(dayKey => {
+          const items = groups[dayKey].sort((a,b) => b.clockIn - a.clockIn);
+          const dayMs = sumEntries(items, true);
+          return `
+            <div class="mb-4">
+              <div class="flex items-center justify-between mb-2 px-1">
+                <div class="text-xs font-bold text-slate-500 uppercase">${fmtDate(Number(dayKey))}</div>
+                <div class="text-xs font-bold text-slate-700">${fmtHours(dayMs)}</div>
+              </div>
+              ${items.map(e => timeEntryRow(e, isOwner())).join('')}
+            </div>`;
+        }).join('')}
+  `;
+}
+
+function timeEntryRow(e, ownerView) {
+  const w = findUser(e.workerId);
+  const dur = entryDuration(e);
+  const open = e.clockOut == null && !e.autoClosed;
+  const flag = e.autoClosed ? `<span class="bg-red-100 text-red-700 text-[10px] font-bold px-2 py-0.5 rounded-full">${t('needs_review')}</span>`
+              : open ? `<span class="bg-green-100 text-green-700 text-[10px] font-bold px-2 py-0.5 rounded-full">${t('open_shift')}</span>` : '';
+  const editedFlag = e.editedBy ? `<span class="text-[10px] text-slate-400" title="${escapeHtml(findUser(e.editedBy).name)}">✎</span>` : '';
+  const click = ownerView ? `onclick="openTimeEntryForm('${e.id}')"` : '';
+  const cursor = ownerView ? 'cursor-pointer hover:shadow-md' : '';
+  return `
+    <div class="bg-white border-2 ${e.autoClosed ? 'border-red-200' : 'border-slate-200'} rounded-xl p-3 mb-2 flex items-center gap-3 ${cursor}" ${click}>
+      ${ownerView ? userAvatar(w, 32) : ''}
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2 mb-0.5">
+          ${ownerView ? `<span class="font-bold text-sm truncate">${escapeHtml(w.name)}</span>` : ''}
+          ${flag}
+          ${editedFlag}
+        </div>
+        <div class="text-sm text-slate-700">
+          <span class="font-bold">${fmtClockTime(e.clockIn)}</span>
+          <span class="text-slate-400 mx-1">→</span>
+          <span class="font-bold">${e.clockOut ? fmtClockTime(e.clockOut) : '—'}</span>
+        </div>
+        ${e.note ? `<div class="text-xs text-slate-500 truncate">${escapeHtml(e.note)}</div>` : ''}
+      </div>
+      <div class="text-right">
+        <div class="font-extrabold text-base ${open ? 'text-green-700' : e.autoClosed ? 'text-red-700' : 'text-slate-900'}">${fmtHours(dur)}</div>
+        <div class="text-[10px] text-slate-400">${fmtHoursDecimal(dur)} ${t('hrs')}</div>
+      </div>
+    </div>`;
+}
+
+function openTimeEntryForm(entryId) {
+  if (!isOwner()) return;
+  const editing = entryId ? TIMES.find(e => e.id === entryId) : null;
+  const e = editing || {
+    id: null,
+    workerId: WORKERS[0]?.id || '',
+    workerName: WORKERS[0]?.name || '',
+    clockIn: Date.now(),
+    clockOut: Date.now(),
+    note: '',
+  };
+  modal(`
+    <div class="flex items-start justify-between gap-3 mb-4">
+      <div class="text-2xl font-extrabold">${editing ? t('edit_entry') : t('new_entry')}</div>
+      <button onclick="closeModal()" class="w-10 h-10 rounded-full bg-slate-100 hover:bg-slate-200 grid place-items-center text-xl font-bold">×</button>
+    </div>
+    ${editing && editing.autoClosed ? `
+      <div class="bg-red-50 border-2 border-red-200 rounded-xl p-3 mb-4 text-sm font-bold text-red-700">
+        ${t('auto_closed_msg')}
+      </div>` : ''}
+    <form id="time-form" onsubmit="event.preventDefault(); saveTimeEntry(${editing ? `'${editing.id}'` : 'null'});" class="space-y-3">
+      <div>
+        <label class="block text-xs font-bold text-slate-600 uppercase mb-1">${t('field_worker')} *</label>
+        <select name="workerId" required class="w-full px-4 py-3 rounded-xl border-2 border-slate-200 focus:border-brand-400 focus:outline-none text-base bg-white">
+          ${WORKERS.map(w => `<option value="${w.id}" ${w.id===e.workerId?'selected':''}>${escapeHtml(w.name)}</option>`).join('')}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-bold text-slate-600 uppercase mb-1">${t('field_clock_in')} *</label>
+        <input name="clockIn" type="datetime-local" required value="${fmtDateTimeLocal(e.clockIn)}"
+          class="w-full px-4 py-3 rounded-xl border-2 border-slate-200 focus:border-brand-400 focus:outline-none text-base" />
+      </div>
+      <div>
+        <label class="block text-xs font-bold text-slate-600 uppercase mb-1">${t('field_clock_out')}</label>
+        <input name="clockOut" type="datetime-local" value="${fmtDateTimeLocal(e.clockOut)}"
+          class="w-full px-4 py-3 rounded-xl border-2 border-slate-200 focus:border-brand-400 focus:outline-none text-base" />
+      </div>
+      <div>
+        <label class="block text-xs font-bold text-slate-600 uppercase mb-1">${t('field_entry_note')}</label>
+        <input name="note" type="text" value="${escapeHtml(e.note||'')}" class="w-full px-4 py-3 rounded-xl border-2 border-slate-200 focus:border-brand-400 focus:outline-none text-base" />
+      </div>
+      <div class="grid ${editing ? 'grid-cols-3' : 'grid-cols-2'} gap-2 pt-2">
+        <button type="button" onclick="closeModal()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 rounded-xl">${t('cancel')}</button>
+        ${editing ? `<button type="button" onclick="deleteTimeEntry('${editing.id}')" class="bg-red-50 hover:bg-red-100 text-red-700 font-bold py-3 rounded-xl border-2 border-red-200">${t('delete')}</button>` : ''}
+        <button type="submit" class="bg-brand-500 hover:bg-brand-600 text-white font-extrabold py-3 rounded-xl">${t('save')}</button>
+      </div>
+    </form>
+  `);
+}
+
+async function saveTimeEntry(entryId) {
+  const f = document.getElementById('time-form');
+  const data = Object.fromEntries(new FormData(f).entries());
+  const w = WORKERS.find(x => x.id === data.workerId);
+  if (!w) return;
+  const inMs = parseDateTimeLocal(data.clockIn);
+  const outMs = data.clockOut ? parseDateTimeLocal(data.clockOut) : null;
+  if (!inMs) return;
+  if (outMs && outMs < inMs) { toast('Clock-out before clock-in', true); return; }
+
+  let entry;
+  if (entryId) {
+    entry = TIMES.find(e => e.id === entryId);
+    entry.workerId = w.id;
+    entry.workerName = w.name;
+    entry.clockIn = inMs;
+    entry.clockOut = outMs;
+    entry.note = data.note || '';
+    entry.autoClosed = false;  // owner cleared the flag by editing
+    entry.editedBy = user.id;
+    entry.editedAt = Date.now();
+  } else {
+    entry = {
+      id: id(),
+      workerId: w.id,
+      workerName: w.name,
+      clockIn: inMs,
+      clockOut: outMs,
+      autoClosed: false,
+      note: data.note || '',
+      editedBy: user.id,
+      editedAt: Date.now(),
+    };
+    TIMES.unshift(entry);
+  }
+  TIMES.sort((a,b) => b.clockIn - a.clockIn);
+  lsSet(KEY_TIME, TIMES);
+  await sbUpsertTime(entry);
+  toast(t('saved'));
+  closeModal();
+  render();
+}
+
+async function deleteTimeEntry(entryId) {
+  confirmDialog({
+    title: t('delete_entry_confirm'),
+    message: '',
+    confirmLabel: t('delete'),
+    danger: true,
+    onConfirm: async () => {
+      TIMES = TIMES.filter(e => e.id !== entryId);
+      lsSet(KEY_TIME, TIMES);
+      await sbDeleteTime(entryId);
+      toast(t('deleted'));
+      closeModal();
+      render();
+    }
+  });
+}
+
+/* ============================================================
    SETTINGS
    ============================================================ */
 function openSettings() {
@@ -1696,7 +2286,7 @@ function openSettings() {
             ${userAvatar(w, 36)}
             <div class="flex-1 min-w-0">
               <div class="font-bold truncate">${escapeHtml(w.name)}</div>
-              <div class="text-xs text-slate-500">PIN: ${escapeHtml(w.pin)}</div>
+              <div class="text-xs text-slate-500">PIN: ${escapeHtml(w.pin)} · ${dayName(Number(w.pay_week_start ?? 0))}</div>
             </div>
             <button onclick="openWorkerForm('${w.id}')" class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-sm font-bold" style="min-height:auto">✎</button>
             <button onclick="deleteWorker('${w.id}')" class="px-3 py-2 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 text-sm font-bold" style="min-height:auto">×</button>
@@ -1801,7 +2391,7 @@ async function deleteOwner(ownerId) {
 /* ---------- WORKER FORM ---------- */
 function openWorkerForm(workerId) {
   const editing = workerId ? WORKERS.find(w => w.id === workerId) : null;
-  const w = editing || { name:'', pin:'', color: DEFAULT_COLORS[WORKERS.length % DEFAULT_COLORS.length] };
+  const w = editing || { name:'', pin:'', color: DEFAULT_COLORS[WORKERS.length % DEFAULT_COLORS.length], pay_week_start: 0 };
   modal(`
     <div class="flex items-start justify-between gap-3 mb-4">
       <div class="text-2xl font-extrabold">${editing ? t('edit_worker') : t('new_worker')}</div>
@@ -1817,6 +2407,12 @@ function openWorkerForm(workerId) {
         <label class="block text-xs font-bold text-slate-600 uppercase mb-1">${t('worker_pin')} *</label>
         <input name="pin" type="text" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" value="${escapeHtml(w.pin)}" required
           class="w-full px-4 py-3 rounded-xl border-2 border-slate-200 focus:border-brand-400 focus:outline-none text-base font-mono tracking-widest" />
+      </div>
+      <div>
+        <label class="block text-xs font-bold text-slate-600 uppercase mb-1">${t('pay_week_start')}</label>
+        <select name="pay_week_start" class="w-full px-4 py-3 rounded-xl border-2 border-slate-200 focus:border-brand-400 focus:outline-none text-base bg-white">
+          ${[0,1,2,3,4,5,6].map(d => `<option value="${d}" ${Number(w.pay_week_start ?? 0)===d?'selected':''}>${dayName(d)}</option>`).join('')}
+        </select>
       </div>
       <div>
         <label class="block text-xs font-bold text-slate-600 uppercase mb-2">${t('worker_color')}</label>
@@ -1845,12 +2441,14 @@ async function saveWorker(workerId) {
   if (OWNERS.some(o => o.pin === data.pin)) { toast(t('pin_duplicate'), true); return; }
   if (WORKERS.some(w => w.pin === data.pin && w.id !== workerId)) { toast(t('pin_duplicate'), true); return; }
 
+  data.pay_week_start = Number(data.pay_week_start ?? 0);
+
   let w;
   if (workerId) {
     w = WORKERS.find(x => x.id === workerId);
     Object.assign(w, data);
   } else {
-    w = { id:id(), name:data.name, pin:data.pin, color:data.color };
+    w = { id:id(), name:data.name, pin:data.pin, color:data.color, pay_week_start:data.pay_week_start };
     WORKERS.push(w);
   }
   lsSet(KEY_WORKERS, WORKERS);
@@ -2018,6 +2616,17 @@ document.getElementById('settings-btn').addEventListener('click', openSettings);
 
 window.addEventListener('online',  () => { if (sb) sbFetchAll(); });
 window.addEventListener('offline', () => setSyncState('offline'));
+
+// Periodic refresh for live shift timer + auto-close checks
+setInterval(() => {
+  if (!user) return;
+  autoCloseStaleShifts();
+  // Only re-render if there's a visible running shift to update
+  const hasOpen = TIMES.some(e => e.clockOut == null && !e.autoClosed);
+  if (hasOpen && (route === 'home' || route === 'time')) {
+    render();
+  }
+}, 60000);
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
